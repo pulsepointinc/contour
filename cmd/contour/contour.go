@@ -135,6 +135,10 @@ func main() {
 	serve.Flag("ingress-class-name", "Contour IngressClass name").StringVar(&reh.IngressClass)
 	serve.Flag("ingressroute-root-namespaces", "Restrict contour to searching these namespaces for root ingress routes").StringVar(&ingressrouteRootNamespaceFlag)
 
+	nwp := contour.NewNodeWeightProvider(log.WithField("context", "nodeweightrovider"))
+	serve.Flag("node-weight-annotation", "Name of the weigh annotation on a node object").Default("ingress.kubernetes.io/node-weight").StringVar(&nwp.NodeWeightAnnotation)
+	serve.Flag("node-weight-default", "Default weight for node if the node-weight-annotation is not present on node object").Default("1").IntVar(&nwp.DefaultNodeWeight)
+
 	args := os.Args[1:]
 	switch kingpin.MustParse(app.Parse(args)) {
 	case bootstrap.FullCommand():
@@ -171,6 +175,7 @@ func main() {
 		k8s.WatchIngress(&g, client, wl, &reh)
 		k8s.WatchSecrets(&g, client, wl, &reh)
 		k8s.WatchIngressRoutes(&g, contourClient, wl, &reh)
+		k8s.WatchNodes(&g, client, wl, nwp)
 
 		ch.IngressRouteStatus = &k8s.IngressRouteStatus{
 			Client: contourClient,
@@ -179,7 +184,8 @@ func main() {
 		// Endpoints updates are handled directly by the EndpointsTranslator
 		// due to their high update rate and their orthogonal nature.
 		et := &contour.EndpointsTranslator{
-			FieldLogger: log.WithField("context", "endpointstranslator"),
+			FieldLogger:        log.WithField("context", "endpointstranslator"),
+			NodeWeightProvider: nwp,
 		}
 		k8s.WatchEndpoints(&g, client, wl, et)
 

@@ -16,6 +16,8 @@ package contour
 import (
 	"strings"
 
+	google_protobuf1 "github.com/gogo/protobuf/types"
+
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
@@ -31,6 +33,7 @@ type EndpointsTranslator struct {
 	logrus.FieldLogger
 	clusterLoadAssignmentCache
 	Cond
+	NodeWeightProvider *NodeWeightProvider
 }
 
 func (e *EndpointsTranslator) OnAdd(obj interface{}) {
@@ -126,7 +129,7 @@ func (e *EndpointsTranslator) recomputeClusterLoadAssignment(oldep, newep *v1.En
 				clas[portname] = cla
 			}
 			for _, a := range s.Addresses {
-				cla.Endpoints[0].LbEndpoints = append(cla.Endpoints[0].LbEndpoints, lbendpoint(a.IP, p.Port))
+				cla.Endpoints[0].LbEndpoints = append(cla.Endpoints[0].LbEndpoints, lbendpoint(a.IP, p.Port, e.NodeWeightProvider.GetNodeWeight(a.NodeName)))
 			}
 		}
 	}
@@ -178,7 +181,7 @@ func clusterloadassignment(name string, lbendpoints ...endpoint.LbEndpoint) *v2.
 	}
 }
 
-func lbendpoint(addr string, port int32) endpoint.LbEndpoint {
+func lbendpoint(addr string, port int32, weight int) endpoint.LbEndpoint {
 	return endpoint.LbEndpoint{
 		Endpoint: &endpoint.Endpoint{
 			Address: &core.Address{
@@ -192,6 +195,9 @@ func lbendpoint(addr string, port int32) endpoint.LbEndpoint {
 					},
 				},
 			},
+		},
+		LoadBalancingWeight: &google_protobuf1.UInt32Value{
+			Value: uint32(weight),
 		},
 	}
 }
