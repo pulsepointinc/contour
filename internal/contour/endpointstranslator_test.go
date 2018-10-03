@@ -35,7 +35,7 @@ func TestEndpointsTranslatorAddEndpoints(t *testing.T) {
 			Ports:     ports(8080),
 		}),
 		want: []proto.Message{
-			clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080)),
+			clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080, 1)),
 		},
 	}, {
 		name: "multiple addresses",
@@ -50,10 +50,10 @@ func TestEndpointsTranslatorAddEndpoints(t *testing.T) {
 		}),
 		want: []proto.Message{
 			clusterloadassignment("default/httpbin-org",
-				lbendpoint("23.23.247.89", 80),
-				lbendpoint("50.17.192.147", 80),
-				lbendpoint("50.17.206.192", 80),
-				lbendpoint("50.19.99.160", 80),
+				lbendpoint("23.23.247.89", 80, 1),
+				lbendpoint("50.17.192.147", 80, 1),
+				lbendpoint("50.17.206.192", 80, 1),
+				lbendpoint("50.19.99.160", 80, 1),
 			),
 		},
 	}}
@@ -62,7 +62,8 @@ func TestEndpointsTranslatorAddEndpoints(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			et := &EndpointsTranslator{
-				FieldLogger: log,
+				FieldLogger:        log,
+				NodeWeightProvider: nodeWeightProvider(),
 			}
 			et.OnAdd(tc.ep)
 			got := contents(et)
@@ -105,7 +106,7 @@ func TestEndpointsTranslatorRemoveEndpoints(t *testing.T) {
 				Ports:     ports(8080),
 			}),
 			want: []proto.Message{
-				clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080)),
+				clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080, 1)),
 			},
 		},
 		"remove non existent": {
@@ -150,7 +151,8 @@ func TestEndpointsTranslatorRemoveEndpoints(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			et := &EndpointsTranslator{
-				FieldLogger: log,
+				FieldLogger:        log,
+				NodeWeightProvider: nodeWeightProvider(),
 			}
 			tc.setup(et)
 			et.OnDelete(tc.ep)
@@ -174,7 +176,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 				Ports:     ports(8080),
 			}),
 			want: []proto.Message{
-				clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080)),
+				clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080, 1)),
 			},
 		},
 		"multiple addresses": {
@@ -189,10 +191,10 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 			}),
 			want: []proto.Message{
 				clusterloadassignment("default/httpbin-org",
-					lbendpoint("23.23.247.89", 80),
-					lbendpoint("50.17.192.147", 80),
-					lbendpoint("50.17.206.192", 80),
-					lbendpoint("50.19.99.160", 80),
+					lbendpoint("23.23.247.89", 80, 1),
+					lbendpoint("50.17.192.147", 80, 1),
+					lbendpoint("50.17.206.192", 80, 1),
+					lbendpoint("50.19.99.160", 80, 1),
 				),
 			},
 		},
@@ -205,7 +207,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 				}},
 			}),
 			want: []proto.Message{
-				clusterloadassignment("default/secure/https", lbendpoint("192.168.183.24", 8443)),
+				clusterloadassignment("default/secure/https", lbendpoint("192.168.183.24", 8443, 1)),
 			},
 		},
 		"remove existing": {
@@ -218,9 +220,11 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			var et EndpointsTranslator
+			et := &EndpointsTranslator{
+				NodeWeightProvider: nodeWeightProvider(),
+			}
 			et.recomputeClusterLoadAssignment(tc.oldep, tc.newep)
-			got := contents(&et)
+			got := contents(et)
 			sort.Stable(clusterLoadAssignmentsByName(got))
 			if !reflect.DeepEqual(tc.want, got) {
 				t.Fatalf("expected:\n%v\ngot:\n%v", tc.want, got)
@@ -231,7 +235,10 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 
 // See #602
 func TestEndpointsTranslatorScaleToZeroEndpoints(t *testing.T) {
-	var et EndpointsTranslator
+	et := &EndpointsTranslator{
+		NodeWeightProvider: nodeWeightProvider(),
+	}
+
 	e1 := endpoints("default", "simple", v1.EndpointSubset{
 		Addresses: addresses("192.168.183.24"),
 		Ports:     ports(8080),
@@ -240,9 +247,9 @@ func TestEndpointsTranslatorScaleToZeroEndpoints(t *testing.T) {
 
 	// Assert endpoint was added
 	want := []proto.Message{
-		clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080)),
+		clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080, 1)),
 	}
-	got := contents(&et)
+	got := contents(et)
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("expected:\n%v\ngot:\n%v\n", want, got)
 	}
@@ -253,7 +260,7 @@ func TestEndpointsTranslatorScaleToZeroEndpoints(t *testing.T) {
 
 	// Assert endpoints are removed
 	want = []proto.Message{}
-	got = contents(&et)
+	got = contents(et)
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("expected:\n%v\ngot:\n%v\n", want, got)
 	}
@@ -265,4 +272,10 @@ func (c clusterLoadAssignmentsByName) Len() int      { return len(c) }
 func (c clusterLoadAssignmentsByName) Swap(i, j int) { c[i], c[j] = c[j], c[i] }
 func (c clusterLoadAssignmentsByName) Less(i, j int) bool {
 	return c[i].(*v2.ClusterLoadAssignment).ClusterName < c[j].(*v2.ClusterLoadAssignment).ClusterName
+}
+
+func nodeWeightProvider() *NodeWeightProvider {
+	nwp := NewNodeWeightProvider(nil)
+	nwp.DefaultNodeWeight = 1
+	return nwp
 }

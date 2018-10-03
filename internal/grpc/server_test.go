@@ -180,7 +180,8 @@ func TestGRPCStreaming(t *testing.T) {
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
 			et = &contour.EndpointsTranslator{
-				FieldLogger: log,
+				FieldLogger:        log,
+				NodeWeightProvider: contour.NewNodeWeightProvider(nil),
 			}
 			ch := contour.CacheHandler{
 				Metrics: metrics.NewMetrics(prometheus.NewRegistry()),

@@ -22,6 +22,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/gogo/protobuf/types"
+	google_protobuf "github.com/gogo/protobuf/types"
 	"google.golang.org/grpc"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,13 +63,13 @@ func TestAddRemoveEndpoints(t *testing.T) {
 		Resources: []types.Any{
 			any(t, clusterloadassignment(
 				"super-long-namespace-name-oh-boy/what-a-descriptive-service-name-you-must-be-so-proud/http",
-				lbendpoint("172.16.0.1", 8000),
-				lbendpoint("172.16.0.2", 8000),
+				lbendpoint("172.16.0.1", 8000, 1),
+				lbendpoint("172.16.0.2", 8000, 1),
 			)),
 			any(t, clusterloadassignment(
 				"super-long-namespace-name-oh-boy/what-a-descriptive-service-name-you-must-be-so-proud/https",
-				lbendpoint("172.16.0.1", 8443),
-				lbendpoint("172.16.0.2", 8443),
+				lbendpoint("172.16.0.1", 8443, 1),
+				lbendpoint("172.16.0.2", 8443, 1),
 			)),
 		},
 		TypeUrl: endpointType,
@@ -144,13 +145,13 @@ func TestAddEndpointComplicated(t *testing.T) {
 		Resources: []types.Any{
 			any(t, clusterloadassignment(
 				"default/kuard/admin",
-				lbendpoint("10.48.1.77", 9000),
-				lbendpoint("10.48.1.78", 9000),
+				lbendpoint("10.48.1.77", 9000, 1),
+				lbendpoint("10.48.1.78", 9000, 1),
 			)),
 			any(t, clusterloadassignment(
 				"default/kuard/foo",
-				lbendpoint("10.48.1.77", 9999), // TODO(dfc) order is not guaranteed by endpoint controller
-				lbendpoint("10.48.1.78", 8080),
+				lbendpoint("10.48.1.77", 9999, 1), // TODO(dfc) order is not guaranteed by endpoint controller
+				lbendpoint("10.48.1.78", 8080, 1),
 			)),
 		},
 		TypeUrl: endpointType,
@@ -204,8 +205,8 @@ func TestEndpointFilter(t *testing.T) {
 		Resources: []types.Any{
 			any(t, clusterloadassignment(
 				"default/kuard/foo",
-				lbendpoint("10.48.1.77", 9999), // TODO(dfc) order is not guaranteed by endpoint controller
-				lbendpoint("10.48.1.78", 8080),
+				lbendpoint("10.48.1.77", 9999, 1), // TODO(dfc) order is not guaranteed by endpoint controller
+				lbendpoint("10.48.1.78", 8080, 1),
 			)),
 		},
 		TypeUrl: endpointType,
@@ -238,7 +239,7 @@ func TestIssue602(t *testing.T) {
 	assertEqual(t, &v2.DiscoveryResponse{
 		VersionInfo: "0",
 		Resources: []types.Any{
-			any(t, clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080))),
+			any(t, clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080, 1))),
 		},
 		TypeUrl: endpointType,
 		Nonce:   "0",
@@ -298,7 +299,7 @@ func clusterloadassignment(name string, lbendpoints ...endpoint.LbEndpoint) *v2.
 		}},
 	}
 }
-func lbendpoint(addr string, port uint32) endpoint.LbEndpoint {
+func lbendpoint(addr string, port uint32, weight int) endpoint.LbEndpoint {
 	return endpoint.LbEndpoint{
 		Endpoint: &endpoint.Endpoint{
 			Address: &core.Address{
@@ -312,6 +313,9 @@ func lbendpoint(addr string, port uint32) endpoint.LbEndpoint {
 					},
 				},
 			},
+		},
+		LoadBalancingWeight: &google_protobuf.UInt32Value{
+			Value: uint32(weight),
 		},
 	}
 }

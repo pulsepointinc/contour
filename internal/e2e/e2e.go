@@ -66,8 +66,11 @@ func setup(t *testing.T, opts ...func(*contour.ResourceEventHandler)) (cache.Res
 	log.Out = &testWriter{t}
 
 	et := &contour.EndpointsTranslator{
-		FieldLogger: log,
+		FieldLogger:        log,
+		NodeWeightProvider: contour.NewNodeWeightProvider(nil),
 	}
+
+	et.NodeWeightProvider.DefaultNodeWeight = 1
 
 	r := prometheus.NewRegistry()
 	ch := &contour.CacheHandler{
