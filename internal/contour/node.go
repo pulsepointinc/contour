@@ -9,8 +9,6 @@ import (
 	_cache "k8s.io/client-go/tools/cache"
 )
 
-const annotation_notfound = -123456789
-
 type NodeWeightProvider struct {
 	logrus.FieldLogger
 	NodeWeightAnnotation string
@@ -36,7 +34,7 @@ func (nwp *NodeWeightProvider) GetNodeWeight(nodeName *string) int {
 
 func (nwp *NodeWeightProvider) updateWeight(old *v1.Node, new *v1.Node) {
 	if oldWeight, ok := nwp.nodeWeights[old.Name]; ok {
-		newWeight := getIntAnnotation(new.ObjectMeta, nwp.NodeWeightAnnotation, annotation_notfound)
+		newWeight := getWeightFromAnnotation(new.ObjectMeta, nwp.NodeWeightAnnotation, nwp.DefaultNodeWeight)
 		if oldWeight != newWeight {
 			nwp.nodeWeights[old.Name] = newWeight
 		}
@@ -46,7 +44,7 @@ func (nwp *NodeWeightProvider) updateWeight(old *v1.Node, new *v1.Node) {
 func (nwp *NodeWeightProvider) OnAdd(obj interface{}) {
 	switch obj := obj.(type) {
 	case *v1.Node:
-		nwp.nodeWeights[obj.Name] = getIntAnnotation(obj.ObjectMeta, nwp.NodeWeightAnnotation, annotation_notfound)
+		nwp.nodeWeights[obj.Name] = getWeightFromAnnotation(obj.ObjectMeta, nwp.NodeWeightAnnotation, nwp.DefaultNodeWeight)
 	default:
 		nwp.Errorf("OnAdd unexpected type %T: %#v", obj, obj)
 	}
@@ -77,6 +75,11 @@ func (nwp *NodeWeightProvider) OnDelete(obj interface{}) {
 	}
 }
 
+func getWeightFromAnnotation(meta metav1.ObjectMeta, annotationName string, defaultWeight int) int {
+	annotationWeight := getIntAnnotation(meta, annotationName, defaultWeight)
+	return normalizeWeight(annotationWeight, defaultWeight)
+}
+
 func getIntAnnotation(meta metav1.ObjectMeta, name string, defaultValue int) int {
 	annotationValue := defaultValue
 	if annotationStringValue, ok := meta.Annotations[name]; ok {
@@ -85,4 +88,11 @@ func getIntAnnotation(meta metav1.ObjectMeta, name string, defaultValue int) int
 		}
 	}
 	return annotationValue
+}
+
+func normalizeWeight(weight, defaultWeight int) int {
+	if weight < 0 || weight > 128 {
+		return defaultWeight
+	}
+	return weight
 }
