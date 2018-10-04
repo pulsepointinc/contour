@@ -32,7 +32,20 @@ type EndpointsTranslator struct {
 	logrus.FieldLogger
 	clusterLoadAssignmentCache
 	Cond
-	NodeWeightProvider *NodeWeightProvider
+	nodeWeightProvider              NodeWeightProvider
+	endpoints                       map[string]*v1.Endpoints
+	ExcludeNamespaceFromServiceName bool
+}
+
+func NewEndpointsTranslator(fieldLogger logrus.FieldLogger, nwp NodeWeightProvider) *EndpointsTranslator {
+	ep := EndpointsTranslator{
+		FieldLogger:        fieldLogger,
+		endpoints:          make(map[string]*v1.Endpoints),
+		nodeWeightProvider: nwp,
+	}
+	ep.nodeWeightProvider.RegisterOnNodeWeightsChanged(ep.onNodeWeightsChanged)
+	return &ep
+
 }
 
 func (e *EndpointsTranslator) OnAdd(obj interface{}) {
@@ -70,6 +83,7 @@ func (e *EndpointsTranslator) OnDelete(obj interface{}) {
 }
 
 func (e *EndpointsTranslator) addEndpoints(ep *v1.Endpoints) {
+	e.endpoints[endpointName(ep)] = ep
 	e.recomputeClusterLoadAssignment(nil, ep)
 }
 
@@ -80,11 +94,20 @@ func (e *EndpointsTranslator) updateEndpoints(oldep, newep *v1.Endpoints) {
 		// to avoid sending a noop notification to watchers.
 		return
 	}
+	e.endpoints[endpointName(newep)] = newep
 	e.recomputeClusterLoadAssignment(oldep, newep)
 }
 
 func (e *EndpointsTranslator) removeEndpoints(ep *v1.Endpoints) {
+	delete(e.endpoints, endpointName(ep))
 	e.recomputeClusterLoadAssignment(ep, nil)
+}
+
+// onNodeWeightsChanged any cluster load assignment might not reflect the new weight and therefore we need to re-run translation again
+func (e EndpointsTranslator) onNodeWeightsChanged() {
+	for _, ep := range e.endpoints {
+		e.recomputeClusterLoadAssignment(nil, ep)
+	}
 }
 
 // recomputeClusterLoadAssignment recomputes the EDS cache taking into account old and new endpoints.
@@ -124,11 +147,11 @@ func (e *EndpointsTranslator) recomputeClusterLoadAssignment(oldep, newep *v1.En
 			portname := p.Name
 			cla, ok := clas[portname]
 			if !ok {
-				cla = clusterloadassignment(servicename(newep.ObjectMeta, portname))
+				cla = clusterloadassignment(servicename(newep.ObjectMeta, portname, e.ExcludeNamespaceFromServiceName))
 				clas[portname] = cla
 			}
 			for _, a := range s.Addresses {
-				cla.Endpoints[0].LbEndpoints = append(cla.Endpoints[0].LbEndpoints, lbendpoint(a.IP, p.Port, e.NodeWeightProvider.GetNodeWeight(a.NodeName)))
+				cla.Endpoints[0].LbEndpoints = append(cla.Endpoints[0].LbEndpoints, lbendpoint(a.IP, p.Port, e.nodeWeight(a.NodeName)))
 			}
 		}
 	}
@@ -150,25 +173,47 @@ func (e *EndpointsTranslator) recomputeClusterLoadAssignment(oldep, newep *v1.En
 			portname := p.Name
 			if _, ok := clas[portname]; !ok {
 				// port is not present in the list added / updated, so remove it
-				e.Remove(servicename(oldep.ObjectMeta, portname))
+				e.Remove(servicename(oldep.ObjectMeta, portname, e.ExcludeNamespaceFromServiceName))
 			}
 		}
 	}
 }
 
+func (e *EndpointsTranslator) nodeWeight(nodeName *string) int {
+	if e.nodeWeightProvider != nil {
+		return e.nodeWeightProvider.GetNodeWeight(nodeName)
+	}
+	return 1
+}
+
+func endpointName(ep *v1.Endpoints) string {
+	return ep.ObjectMeta.GetNamespace() + "." + ep.ObjectMeta.GetName()
+}
+
 // servicename returns the name of the cluster this meta and port
 // refers to. The CDS name of the cluster may include additional suffixes
 // but these are not known to EDS.
-func servicename(meta metav1.ObjectMeta, portname string) string {
-	name := []string{
-		meta.Namespace,
-		meta.Name,
-		portname,
+func servicename(meta metav1.ObjectMeta, portname string, ignoreNamespace bool) string {
+	if ignoreNamespace {
+		if portname == "" {
+			return meta.Name
+		}
+		name := []string{
+			meta.Name,
+			portname,
+		}
+		return strings.Join(name, "/")
+	} else {
+		name := []string{
+			meta.Namespace,
+			meta.Name,
+			portname,
+		}
+		if portname == "" {
+			name = name[:2]
+		}
+		return strings.Join(name, "/")
 	}
-	if portname == "" {
-		name = name[:2]
-	}
-	return strings.Join(name, "/")
 }
 
 func clusterloadassignment(name string, lbendpoints ...endpoint.LbEndpoint) *v2.ClusterLoadAssignment {
@@ -181,7 +226,7 @@ func clusterloadassignment(name string, lbendpoints ...endpoint.LbEndpoint) *v2.
 }
 
 func lbendpoint(addr string, port int32, weight int) endpoint.LbEndpoint {
-	return endpoint.LbEndpoint{
+	lbe := endpoint.LbEndpoint{
 		Endpoint: &endpoint.Endpoint{
 			Address: &core.Address{
 				Address: &core.Address_SocketAddress{
@@ -195,6 +240,11 @@ func lbendpoint(addr string, port int32, weight int) endpoint.LbEndpoint {
 				},
 			},
 		},
-		LoadBalancingWeight: &types.UInt32Value{Value: uint32(weight)},
 	}
+
+	if weight != 1 {
+		lbe.LoadBalancingWeight = &types.UInt32Value{Value: uint32(weight)}
+	}
+
+	return lbe
 }

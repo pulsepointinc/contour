@@ -300,7 +300,7 @@ func clusterloadassignment(name string, lbendpoints ...endpoint.LbEndpoint) *v2.
 	}
 }
 func lbendpoint(addr string, port uint32, weight int) endpoint.LbEndpoint {
-	return endpoint.LbEndpoint{
+	lbep := endpoint.LbEndpoint{
 		Endpoint: &endpoint.Endpoint{
 			Address: &core.Address{
 				Address: &core.Address_SocketAddress{
@@ -314,8 +314,13 @@ func lbendpoint(addr string, port uint32, weight int) endpoint.LbEndpoint {
 				},
 			},
 		},
-		LoadBalancingWeight: &google_protobuf.UInt32Value{
-			Value: uint32(weight),
-		},
 	}
+
+	if weight != 1 {
+		lbep.LoadBalancingWeight = &google_protobuf.UInt32Value{
+			Value: uint32(weight),
+		}
+	}
+
+	return lbep
 }

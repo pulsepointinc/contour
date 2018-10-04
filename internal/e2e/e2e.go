@@ -65,12 +65,7 @@ func setup(t *testing.T, opts ...func(*contour.ResourceEventHandler)) (cache.Res
 	log := logrus.New()
 	log.Out = &testWriter{t}
 
-	et := &contour.EndpointsTranslator{
-		FieldLogger:        log,
-		NodeWeightProvider: contour.NewNodeWeightProvider(nil),
-	}
-
-	et.NodeWeightProvider.DefaultNodeWeight = 1
+	et := contour.NewEndpointsTranslator(log, nodeWeightProvider(log))
 
 	r := prometheus.NewRegistry()
 	ch := &contour.CacheHandler{
@@ -211,4 +206,10 @@ func fileAccessLog(path string) *accesslog.FileAccessLog {
 	return &accesslog.FileAccessLog{
 		Path: path,
 	}
+}
+
+func nodeWeightProvider(fieldLogger logrus.FieldLogger) contour.NodeWeightProvider {
+	nwp := contour.NewNodeWeightProvider(fieldLogger).(*contour.NodeWeightCache)
+	nwp.DefaultNodeWeight = 1
+	return nwp
 }

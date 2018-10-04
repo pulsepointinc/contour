@@ -20,6 +20,7 @@ import (
 
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/gogo/protobuf/proto"
+	logrus "github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 )
 
@@ -61,10 +62,7 @@ func TestEndpointsTranslatorAddEndpoints(t *testing.T) {
 	log := testLogger(t)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			et := &EndpointsTranslator{
-				FieldLogger:        log,
-				NodeWeightProvider: nodeWeightProvider(),
-			}
+			et := NewEndpointsTranslator(log, nodeWeightProvider(log))
 			et.OnAdd(tc.ep)
 			got := contents(et)
 			sort.Stable(clusterLoadAssignmentsByName(got))
@@ -150,10 +148,7 @@ func TestEndpointsTranslatorRemoveEndpoints(t *testing.T) {
 	log := testLogger(t)
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			et := &EndpointsTranslator{
-				FieldLogger:        log,
-				NodeWeightProvider: nodeWeightProvider(),
-			}
+			et := NewEndpointsTranslator(log, nodeWeightProvider(log))
 			tc.setup(et)
 			et.OnDelete(tc.ep)
 			got := contents(et)
@@ -220,9 +215,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			et := &EndpointsTranslator{
-				NodeWeightProvider: nodeWeightProvider(),
-			}
+			et := NewEndpointsTranslator(nil, nodeWeightProvider(nil))
 			et.recomputeClusterLoadAssignment(tc.oldep, tc.newep)
 			got := contents(et)
 			sort.Stable(clusterLoadAssignmentsByName(got))
@@ -235,9 +228,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 
 // See #602
 func TestEndpointsTranslatorScaleToZeroEndpoints(t *testing.T) {
-	et := &EndpointsTranslator{
-		NodeWeightProvider: nodeWeightProvider(),
-	}
+	et := NewEndpointsTranslator(nil, nodeWeightProvider(nil))
 
 	e1 := endpoints("default", "simple", v1.EndpointSubset{
 		Addresses: addresses("192.168.183.24"),
@@ -274,8 +265,8 @@ func (c clusterLoadAssignmentsByName) Less(i, j int) bool {
 	return c[i].(*v2.ClusterLoadAssignment).ClusterName < c[j].(*v2.ClusterLoadAssignment).ClusterName
 }
 
-func nodeWeightProvider() *NodeWeightProvider {
-	nwp := NewNodeWeightProvider(nil)
+func nodeWeightProvider(fieldLogger logrus.FieldLogger) NodeWeightProvider {
+	nwp := NewNodeWeightProvider(fieldLogger).(*NodeWeightCache)
 	nwp.DefaultNodeWeight = 1
 	return nwp
 }

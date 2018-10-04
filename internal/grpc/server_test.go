@@ -179,10 +179,7 @@ func TestGRPCStreaming(t *testing.T) {
 	log := testLogger(t)
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {
-			et = &contour.EndpointsTranslator{
-				FieldLogger:        log,
-				NodeWeightProvider: contour.NewNodeWeightProvider(nil),
-			}
+			et = contour.NewEndpointsTranslator(log, nodeWeightProvider(log))
 			ch := contour.CacheHandler{
 				Metrics: metrics.NewMetrics(prometheus.NewRegistry()),
 			}
@@ -366,4 +363,10 @@ func (t *testWriter) Write(buf []byte) (int, error) {
 	t.Helper()
 	t.Logf("%s", buf)
 	return len(buf), nil
+}
+
+func nodeWeightProvider(fieldLogger logrus.FieldLogger) contour.NodeWeightProvider {
+	nwp := contour.NewNodeWeightProvider(fieldLogger).(*contour.NodeWeightCache)
+	nwp.DefaultNodeWeight = 1
+	return nwp
 }
