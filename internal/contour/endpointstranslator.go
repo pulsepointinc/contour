@@ -19,7 +19,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
-	google_protobuf "github.com/gogo/protobuf/types"
+	"github.com/gogo/protobuf/types"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -195,8 +195,6 @@ func lbendpoint(addr string, port int32, weight int) endpoint.LbEndpoint {
 				},
 			},
 		},
-		LoadBalancingWeight: &google_protobuf.UInt32Value{
-			Value: uint32(weight),
-		},
+		LoadBalancingWeight: &types.UInt32Value{Value: uint32(weight)},
 	}
 }
