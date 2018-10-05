@@ -80,11 +80,11 @@ type Route struct {
 	PerTryTimeout time.Duration
 }
 
-func (r *Route) addService(s *Service) {
+func (r *Route) addService(s *Service, ignoreNamespace bool) {
 	if r.services == nil {
 		r.services = make(map[servicemeta]*Service)
 	}
-	r.services[s.toMeta()] = s
+	r.services[s.toMeta(ignoreNamespace)] = s
 }
 
 func (r *Route) Visit(f func(Vertex)) {
@@ -193,15 +193,18 @@ type servicemeta struct {
 	healthcheck string // %#v of *ingressroutev1.HealthCheck
 }
 
-func (s *Service) toMeta() servicemeta {
-	return servicemeta{
+func (s *Service) toMeta(ignoreNamespace bool) servicemeta {
+	svcMeta := servicemeta{
 		name:        s.Object.Name,
-		namespace:   s.Object.Namespace,
 		port:        s.Port,
 		weight:      s.Weight,
 		strategy:    s.LoadBalancerStrategy,
 		healthcheck: healthcheckToString(s.HealthCheck),
 	}
+	if !ignoreNamespace {
+		svcMeta.namespace = s.Object.Namespace
+	}
+	return svcMeta
 }
 
 // Secret represents a K8s Secret for TLS usage as a DAG Vertex. A Secret is

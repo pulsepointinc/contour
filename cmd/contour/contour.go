@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/heptio/contour/internal/dag"
+
 	"github.com/heptio/contour/internal/debug"
 	clientset "github.com/heptio/contour/internal/generated/clientset/versioned"
 	"github.com/heptio/contour/internal/httpsvc"
@@ -108,6 +110,9 @@ func main() {
 			Notifier:    &ch,
 			FieldLogger: log.WithField("context", "HoldoffNotifier"),
 			Metrics:     metrics,
+		},
+		Builder: dag.Builder{
+			ExcludeNamespaceFromServiceName: &ch.ExcludeNamespaceFromServiceName,
 		},
 	}
 
