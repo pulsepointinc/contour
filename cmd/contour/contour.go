@@ -87,7 +87,7 @@ func main() {
 		FieldLogger: log.WithField("context", "CacheHandler"),
 	}
 
-	serve.Flag("exclude-namespace-from-service-name", "Set to true if you want to combine endpoints from services running in different namespaces").Default("ingress.kubernetes.io/node-weight").Default("false").BoolVar(&ch.ExcludeNamespaceFromServiceName)
+	serve.Flag("exclude-namespace-from-service-name", "Set to true if you want to combine endpoints from services running in different namespaces").Default("false").BoolVar(&ch.ExcludeNamespaceFromServiceName)
 
 	metricsvc := metrics.Service{
 		Service: httpsvc.Service{
@@ -191,7 +191,7 @@ func main() {
 		// Endpoints updates are handled directly by the EndpointsTranslator
 		// due to their high update rate and their orthogonal nature.
 		et := contour.NewEndpointsTranslator(log.WithField("context", "endpointstranslator"), nwp)
-		et.ExcludeNamespaceFromServiceName = ch.ExcludeNamespaceFromServiceName
+		et.ExcludeNamespaceFromServiceName = &ch.ExcludeNamespaceFromServiceName
 
 		k8s.WatchEndpoints(&g, client, wl, et)
 

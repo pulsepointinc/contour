@@ -56,7 +56,7 @@ func TestClusterVisit(t *testing.T) {
 						},
 					},
 				},
-				service("default", "kuard",
+				svc("default", "kuard",
 					v1.ServicePort{
 						Protocol:   "TCP",
 						Port:       443,
@@ -95,7 +95,7 @@ func TestClusterVisit(t *testing.T) {
 						},
 					},
 				},
-				service("default", "kuard",
+				svc("default", "kuard",
 					v1.ServicePort{
 						Name:       "https",
 						Protocol:   "TCP",
@@ -181,7 +181,7 @@ func TestClusterVisit(t *testing.T) {
 						},
 					},
 				},
-				service("beurocratic-company-test-domain-1", "tiny-cog-department-test-instance",
+				svc("beurocratic-company-test-domain-1", "tiny-cog-department-test-instance",
 					v1.ServicePort{
 						Name:       "svc-0",
 						Protocol:   "TCP",
@@ -230,7 +230,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -298,7 +298,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -367,7 +367,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -429,7 +429,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -475,7 +475,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -521,7 +521,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -567,7 +567,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -613,7 +613,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -666,7 +666,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -728,7 +728,7 @@ func TestClusterVisit(t *testing.T) {
 						}},
 					},
 				},
-				service("default", "backend", v1.ServicePort{
+				svc("default", "backend", v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
 					Port:       80,
@@ -827,7 +827,7 @@ func TestClusterVisit(t *testing.T) {
 						},
 					},
 				},
-				service("default", "kuard",
+				svc("default", "kuard",
 					v1.ServicePort{
 						Name:       "https",
 						Protocol:   "TCP",
@@ -883,7 +883,7 @@ func TestClustername(t *testing.T) {
 	}{
 		"simple": {
 			service: &dag.Service{
-				Object: service("default", "backend"),
+				Object: svc("default", "backend"),
 				ServicePort: &v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
@@ -895,7 +895,7 @@ func TestClustername(t *testing.T) {
 		},
 		"far too long": {
 			service: &dag.Service{
-				Object: service("it-is-a-truth-universally-acknowledged-that-a-single-man-in-possession-of-a-good-fortune", "must-be-in-want-of-a-wife"),
+				Object: svc("it-is-a-truth-universally-acknowledged-that-a-single-man-in-possession-of-a-good-fortune", "must-be-in-want-of-a-wife"),
 				ServicePort: &v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
@@ -907,7 +907,7 @@ func TestClustername(t *testing.T) {
 		},
 		"various healthcheck params": {
 			service: &dag.Service{
-				Object: service("default", "backend"),
+				Object: svc("default", "backend"),
 				ServicePort: &v1.ServicePort{
 					Name:       "http",
 					Protocol:   "TCP",
@@ -941,7 +941,7 @@ func uint32t(v int) *types.UInt32Value {
 	return &types.UInt32Value{Value: uint32(v)}
 }
 
-func service(ns, name string, ports ...v1.ServicePort) *v1.Service {
+func svc(ns, name string, ports ...v1.ServicePort) *v1.Service {
 	return serviceWithAnnotations(ns, name, nil, ports...)
 }
 

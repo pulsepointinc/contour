@@ -44,7 +44,7 @@ func contents(v interface {
 	return v.Values(func(string) bool { return true })
 }
 
-func endpoints(ns, name string, subsets ...v1.EndpointSubset) *v1.Endpoints {
+func eps(ns, name string, subsets ...v1.EndpointSubset) *v1.Endpoints {
 	return &v1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

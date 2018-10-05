@@ -31,7 +31,7 @@ func TestEndpointsTranslatorAddEndpoints(t *testing.T) {
 		want []proto.Message
 	}{{
 		name: "simple",
-		ep: endpoints("default", "simple", v1.EndpointSubset{
+		ep: eps("default", "simple", v1.EndpointSubset{
 			Addresses: addresses("192.168.183.24"),
 			Ports:     ports(8080),
 		}),
@@ -40,7 +40,7 @@ func TestEndpointsTranslatorAddEndpoints(t *testing.T) {
 		},
 	}, {
 		name: "multiple addresses",
-		ep: endpoints("default", "httpbin-org", v1.EndpointSubset{
+		ep: eps("default", "httpbin-org", v1.EndpointSubset{
 			Addresses: addresses(
 				"23.23.247.89",
 				"50.17.192.147",
@@ -81,12 +81,12 @@ func TestEndpointsTranslatorRemoveEndpoints(t *testing.T) {
 	}{
 		"remove existing": {
 			setup: func(et *EndpointsTranslator) {
-				et.OnAdd(endpoints("default", "simple", v1.EndpointSubset{
+				et.OnAdd(eps("default", "simple", v1.EndpointSubset{
 					Addresses: addresses("192.168.183.24"),
 					Ports:     ports(8080),
 				}))
 			},
-			ep: endpoints("default", "simple", v1.EndpointSubset{
+			ep: eps("default", "simple", v1.EndpointSubset{
 				Addresses: addresses("192.168.183.24"),
 				Ports:     ports(8080),
 			}),
@@ -94,12 +94,12 @@ func TestEndpointsTranslatorRemoveEndpoints(t *testing.T) {
 		},
 		"remove different": {
 			setup: func(et *EndpointsTranslator) {
-				et.OnAdd(endpoints("default", "simple", v1.EndpointSubset{
+				et.OnAdd(eps("default", "simple", v1.EndpointSubset{
 					Addresses: addresses("192.168.183.24"),
 					Ports:     ports(8080),
 				}))
 			},
-			ep: endpoints("default", "different", v1.EndpointSubset{
+			ep: eps("default", "different", v1.EndpointSubset{
 				Addresses: addresses("192.168.183.24"),
 				Ports:     ports(8080),
 			}),
@@ -109,7 +109,7 @@ func TestEndpointsTranslatorRemoveEndpoints(t *testing.T) {
 		},
 		"remove non existent": {
 			setup: func(*EndpointsTranslator) {},
-			ep: endpoints("default", "simple", v1.EndpointSubset{
+			ep: eps("default", "simple", v1.EndpointSubset{
 				Addresses: addresses("192.168.183.24"),
 				Ports:     ports(8080),
 			}),
@@ -117,7 +117,7 @@ func TestEndpointsTranslatorRemoveEndpoints(t *testing.T) {
 		},
 		"remove long name": {
 			setup: func(et *EndpointsTranslator) {
-				e1 := endpoints(
+				e1 := eps(
 					"super-long-namespace-name-oh-boy",
 					"what-a-descriptive-service-name-you-must-be-so-proud",
 					v1.EndpointSubset{
@@ -130,7 +130,7 @@ func TestEndpointsTranslatorRemoveEndpoints(t *testing.T) {
 				)
 				et.OnAdd(e1)
 			},
-			ep: endpoints(
+			ep: eps(
 				"super-long-namespace-name-oh-boy",
 				"what-a-descriptive-service-name-you-must-be-so-proud",
 				v1.EndpointSubset{
@@ -166,7 +166,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 		want         []proto.Message
 	}{
 		"simple": {
-			newep: endpoints("default", "simple", v1.EndpointSubset{
+			newep: eps("default", "simple", v1.EndpointSubset{
 				Addresses: addresses("192.168.183.24"),
 				Ports:     ports(8080),
 			}),
@@ -175,7 +175,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 			},
 		},
 		"multiple addresses": {
-			newep: endpoints("default", "httpbin-org", v1.EndpointSubset{
+			newep: eps("default", "httpbin-org", v1.EndpointSubset{
 				Addresses: addresses(
 					"23.23.247.89",
 					"50.17.192.147",
@@ -194,7 +194,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 			},
 		},
 		"named container port": {
-			newep: endpoints("default", "secure", v1.EndpointSubset{
+			newep: eps("default", "secure", v1.EndpointSubset{
 				Addresses: addresses("192.168.183.24"),
 				Ports: []v1.EndpointPort{{
 					Name: "https",
@@ -206,7 +206,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 			},
 		},
 		"remove existing": {
-			oldep: endpoints("default", "simple", v1.EndpointSubset{
+			oldep: eps("default", "simple", v1.EndpointSubset{
 				Addresses: addresses("192.168.183.24"),
 				Ports:     ports(8080),
 			}),
@@ -230,7 +230,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 func TestEndpointsTranslatorScaleToZeroEndpoints(t *testing.T) {
 	et := NewEndpointsTranslator(nil, nodeWeightProvider(nil))
 
-	e1 := endpoints("default", "simple", v1.EndpointSubset{
+	e1 := eps("default", "simple", v1.EndpointSubset{
 		Addresses: addresses("192.168.183.24"),
 		Ports:     ports(8080),
 	})
@@ -246,7 +246,7 @@ func TestEndpointsTranslatorScaleToZeroEndpoints(t *testing.T) {
 	}
 
 	// e2 is the same as e1, but without endpoint subsets
-	e2 := endpoints("default", "simple")
+	e2 := eps("default", "simple")
 	et.OnUpdate(e1, e2)
 
 	// Assert endpoints are removed
