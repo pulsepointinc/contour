@@ -16,10 +16,10 @@ package contour
 import (
 	"crypto/sha1"
 	"fmt"
+	"strings"
 	"sync"
 
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2"
@@ -111,7 +111,8 @@ type clusterVisitor struct {
 	*ClusterCache
 	dag.Visitable
 
-	clusters map[string]*v2.Cluster
+	clusters                        map[string]*v2.Cluster
+	ExcludeNamespaceFromServiceName bool
 }
 
 func (v *clusterVisitor) Visit() map[string]*v2.Cluster {
@@ -129,7 +130,7 @@ func (v *clusterVisitor) visit(vertex dag.Vertex) {
 }
 
 func (v *clusterVisitor) edscluster(svc *dag.Service) {
-	name := clustername(svc)
+	name := clustername(svc, v.ExcludeNamespaceFromServiceName)
 	if _, ok := v.clusters[name]; ok {
 		// already created this cluster via another edge. skip it.
 		return
@@ -138,7 +139,7 @@ func (v *clusterVisitor) edscluster(svc *dag.Service) {
 	c := &v2.Cluster{
 		Name:             name,
 		Type:             v2.Cluster_EDS,
-		EdsClusterConfig: edsconfig("contour", svc),
+		EdsClusterConfig: edsconfig("contour", svc, v.ExcludeNamespaceFromServiceName),
 		ConnectTimeout:   250 * time.Millisecond,
 		LbPolicy:         edslbstrategy(svc.LoadBalancerStrategy),
 		CommonLbConfig: &v2.Cluster_CommonLbConfig{
@@ -179,7 +180,7 @@ func (v *clusterVisitor) edscluster(svc *dag.Service) {
 }
 
 // clustername returns the name of the CDS cluster for this service.
-func clustername(s *dag.Service) string {
+func clustername(s *dag.Service, ignoreNamespace bool) string {
 	buf := s.LoadBalancerStrategy
 	if hc := s.HealthCheck; hc != nil {
 		if hc.TimeoutSeconds > 0 {
@@ -200,7 +201,12 @@ func clustername(s *dag.Service) string {
 	hash := sha1.Sum([]byte(buf))
 	ns := s.Namespace()
 	name := s.Name()
-	return hashname(60, ns, name, strconv.Itoa(int(s.Port)), fmt.Sprintf("%x", hash[:5]))
+
+	if ignoreNamespace {
+		return hashname(60, name, strconv.Itoa(int(s.Port)), fmt.Sprintf("%x", hash[:5]))
+	} else {
+		return hashname(60, ns, name, strconv.Itoa(int(s.Port)), fmt.Sprintf("%x", hash[:5]))
+	}
 }
 
 func edslbstrategy(lbStrategy string) v2.Cluster_LbPolicy {
@@ -269,14 +275,17 @@ func uint32OrNil(i int) *types.UInt32Value {
 	}
 }
 
-func edsconfig(source string, service *dag.Service) *v2.Cluster_EdsClusterConfig {
+func edsconfig(source string, service *dag.Service, ignoreNamespace bool) *v2.Cluster_EdsClusterConfig {
 	name := []string{
 		service.Namespace(),
 		service.Name(),
 		service.ServicePort.Name,
 	}
-	if name[2] == "" {
+	if service.ServicePort.Name == "" {
 		name = name[:2]
+	}
+	if ignoreNamespace {
+		name = name[1:]
 	}
 	return &v2.Cluster_EdsClusterConfig{
 		EdsConfig:   apiconfigsource(source), // hard coded by initconfig

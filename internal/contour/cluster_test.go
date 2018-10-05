@@ -929,7 +929,7 @@ func TestClustername(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := clustername(tc.service)
+			got := clustername(tc.service, false)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatal(diff)
 			}

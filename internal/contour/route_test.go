@@ -1760,7 +1760,7 @@ func TestActionRoute(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := actionroute(&tc.route, tc.services)
+			got := actionroute(&tc.route, tc.services, false)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatal(diff)
 			}
