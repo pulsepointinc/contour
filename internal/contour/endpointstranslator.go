@@ -306,3 +306,8 @@ func falsePtr() *bool {
 	r := false
 	return &r
 }
+
+func truePtr() *bool {
+	r := true
+	return &r
+}

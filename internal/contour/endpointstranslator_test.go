@@ -257,6 +257,258 @@ func TestEndpointsTranslatorScaleToZeroEndpoints(t *testing.T) {
 	}
 }
 
+func TestEndpointsTranslatorAddEndpointsNamespaceExludedFromClusterNames(t *testing.T) {
+	tests := []struct {
+		name string
+		ep   []*v1.Endpoints
+		want []proto.Message
+	}{
+		{
+			name: "simple",
+			ep: []*v1.Endpoints{
+				eps("staging", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.24"),
+					Ports:     ports(8080),
+				}),
+				eps("prod", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.25", "192.168.183.26", "192.168.183.27", "192.168.183.28", "192.168.183.29"),
+					Ports:     ports(8080),
+				})},
+			want: []proto.Message{
+				clusterloadassignment("simple",
+					lbendpoint("192.168.183.24", 8080, 1),
+					lbendpoint("192.168.183.25", 8080, 1),
+					lbendpoint("192.168.183.26", 8080, 1),
+					lbendpoint("192.168.183.27", 8080, 1),
+					lbendpoint("192.168.183.28", 8080, 1),
+					lbendpoint("192.168.183.29", 8080, 1),
+				),
+			},
+		},
+	}
+
+	log := testLogger(t)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			et := NewEndpointsTranslator(log, nodeWeightProvider(log))
+			*et.ExcludeNamespaceFromServiceName = true
+			for _, ep := range tc.ep {
+				et.OnAdd(ep)
+			}
+			got := contents(et)
+			sort.Stable(clusterLoadAssignmentsByName(got))
+			if !reflect.DeepEqual(tc.want, got) {
+				t.Fatalf("got: %v, want: %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEndpointsTranslatorRemoveEndpointsNamespaceExludedFromClusterNames(t *testing.T) {
+	tests := map[string]struct {
+		setup func(*EndpointsTranslator)
+		ep    *v1.Endpoints
+		want  []proto.Message
+	}{
+		"remove existing": {
+			setup: func(et *EndpointsTranslator) {
+				et.OnAdd(eps("staging", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.24"),
+					Ports:     ports(8080),
+				}))
+				et.OnAdd(eps("prod", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.25", "192.168.183.26", "192.168.183.27", "192.168.183.28", "192.168.183.29"),
+					Ports:     ports(8080),
+				}))
+			},
+			ep: eps("staging", "simple", v1.EndpointSubset{
+				Addresses: addresses("192.168.183.24"),
+				Ports:     ports(8080),
+			}),
+			want: []proto.Message{
+				clusterloadassignment("simple",
+					lbendpoint("192.168.183.25", 8080, 1),
+					lbendpoint("192.168.183.26", 8080, 1),
+					lbendpoint("192.168.183.27", 8080, 1),
+					lbendpoint("192.168.183.28", 8080, 1),
+					lbendpoint("192.168.183.29", 8080, 1),
+				),
+			},
+		},
+		"remove different": {
+			setup: func(et *EndpointsTranslator) {
+				et.OnAdd(eps("staging", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.24"),
+					Ports:     ports(8080),
+				}))
+				et.OnAdd(eps("prod", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.25", "192.168.183.26", "192.168.183.27", "192.168.183.28", "192.168.183.29"),
+					Ports:     ports(8080),
+				}))
+			},
+			ep: eps("staging", "different", v1.EndpointSubset{
+				Addresses: addresses("192.168.183.14"),
+				Ports:     ports(8080),
+			}),
+			want: []proto.Message{
+				clusterloadassignment("simple",
+					lbendpoint("192.168.183.24", 8080, 1),
+					lbendpoint("192.168.183.25", 8080, 1),
+					lbendpoint("192.168.183.26", 8080, 1),
+					lbendpoint("192.168.183.27", 8080, 1),
+					lbendpoint("192.168.183.28", 8080, 1),
+					lbendpoint("192.168.183.29", 8080, 1),
+				),
+			},
+		},
+		"remove non existent": {
+			setup: func(*EndpointsTranslator) {},
+			ep: eps("default", "simple", v1.EndpointSubset{
+				Addresses: addresses("192.168.183.24"),
+				Ports:     ports(8080),
+			}),
+			want: []proto.Message{},
+		},
+	}
+
+	log := testLogger(t)
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			et := NewEndpointsTranslator(log, nodeWeightProvider(log))
+			*et.ExcludeNamespaceFromServiceName = true
+			tc.setup(et)
+			et.OnDelete(tc.ep)
+			got := contents(et)
+			sort.Stable(clusterLoadAssignmentsByName(got))
+			if !reflect.DeepEqual(tc.want, got) {
+				t.Fatalf("\nwant: %v\n got: %v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestEndpointsTranslatorRecomputeClusterLoadAssignmentNamespaceExludedFromClusterNames(t *testing.T) {
+	tests := map[string]struct {
+		setup        func(*EndpointsTranslator)
+		oldep, newep *v1.Endpoints
+		want         []proto.Message
+	}{
+		"simple": {
+			setup: func(et *EndpointsTranslator) {
+				et.OnAdd(eps("prod", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.25"),
+					Ports:     ports(8080),
+				}))
+			},
+			newep: eps("staging", "simple", v1.EndpointSubset{
+				Addresses: addresses("192.168.183.24"),
+				Ports:     ports(8080),
+			}),
+			want: []proto.Message{
+				clusterloadassignment("simple",
+					lbendpoint("192.168.183.25", 8080, 1),
+					lbendpoint("192.168.183.24", 8080, 1),
+				),
+			},
+		},
+		"multiple addresses": {
+			setup: func(et *EndpointsTranslator) {
+				et.OnAdd(eps("staging", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.24"),
+					Ports:     ports(8080),
+				}))
+			},
+			newep: eps("prod", "simple", v1.EndpointSubset{
+				Addresses: addresses("192.168.183.25", "192.168.183.26", "192.168.183.27", "192.168.183.28", "192.168.183.29"),
+				Ports:     ports(8080),
+			}),
+			want: []proto.Message{
+				clusterloadassignment("simple",
+					lbendpoint("192.168.183.24", 8080, 1),
+					lbendpoint("192.168.183.25", 8080, 1),
+					lbendpoint("192.168.183.26", 8080, 1),
+					lbendpoint("192.168.183.27", 8080, 1),
+					lbendpoint("192.168.183.28", 8080, 1),
+					lbendpoint("192.168.183.29", 8080, 1),
+				),
+			},
+		},
+		"named container port": {
+			setup: func(et *EndpointsTranslator) {
+				et.OnAdd(eps("prod", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.25", "192.168.183.26", "192.168.183.27", "192.168.183.28", "192.168.183.29"),
+					Ports: []v1.EndpointPort{
+						port(8080, "http"),
+					},
+				}))
+			},
+			newep: eps("staging", "simple", v1.EndpointSubset{
+				Addresses: addresses("192.168.183.24"),
+				Ports: []v1.EndpointPort{
+					port(8080, "http"),
+				},
+			}),
+			want: []proto.Message{
+				clusterloadassignment("simple/http",
+					lbendpoint("192.168.183.25", 8080, 1),
+					lbendpoint("192.168.183.26", 8080, 1),
+					lbendpoint("192.168.183.27", 8080, 1),
+					lbendpoint("192.168.183.28", 8080, 1),
+					lbendpoint("192.168.183.29", 8080, 1),
+					lbendpoint("192.168.183.24", 8080, 1),
+				),
+			},
+		},
+		"remove existing": {
+			setup: func(et *EndpointsTranslator) {
+				et.OnAdd(eps("staging", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.24"),
+					Ports:     ports(8080),
+				}))
+				et.OnAdd(eps("prod", "simple", v1.EndpointSubset{
+					Addresses: addresses("192.168.183.25", "192.168.183.26", "192.168.183.27", "192.168.183.28", "192.168.183.29"),
+					Ports:     ports(8080),
+				}))
+			},
+			oldep: eps("staging", "simple", v1.EndpointSubset{
+				Addresses: addresses("192.168.183.24"),
+				Ports:     ports(8080),
+			}),
+			want: []proto.Message{
+				clusterloadassignment("simple",
+					lbendpoint("192.168.183.25", 8080, 1),
+					lbendpoint("192.168.183.26", 8080, 1),
+					lbendpoint("192.168.183.27", 8080, 1),
+					lbendpoint("192.168.183.28", 8080, 1),
+					lbendpoint("192.168.183.29", 8080, 1),
+				),
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			et := NewEndpointsTranslator(nil, nodeWeightProvider(nil))
+			*et.ExcludeNamespaceFromServiceName = true
+			tc.setup(et)
+
+			if tc.oldep != nil && tc.newep != nil {
+				et.OnUpdate(tc.oldep, tc.newep)
+			} else if tc.oldep != nil {
+				et.OnDelete(tc.oldep)
+			} else if tc.newep != nil {
+				et.OnAdd(tc.newep)
+			}
+
+			et.recomputeClusterLoadAssignment(tc.oldep, tc.newep)
+			got := contents(et)
+			sort.Stable(clusterLoadAssignmentsByName(got))
+			if !reflect.DeepEqual(tc.want, got) {
+				t.Fatalf("expected:\n%v\ngot:\n%v", tc.want, got)
+			}
+		})
+	}
+}
+
 type clusterLoadAssignmentsByName []proto.Message
 
 func (c clusterLoadAssignmentsByName) Len() int      { return len(c) }

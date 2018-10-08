@@ -70,6 +70,13 @@ func ports(ps ...int32) []v1.EndpointPort {
 	return ports
 }
 
+func port(port int32, portName string) v1.EndpointPort {
+	return v1.EndpointPort{
+		Name: portName,
+		Port: port,
+	}
+}
+
 type nullNotifier int
 
 func (nn *nullNotifier) OnChange(b *dag.Builder) {}

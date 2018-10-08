@@ -1843,6 +1843,7 @@ func TestActionRoute(t *testing.T) {
 					ServicePort: &v1.ServicePort{
 						Port: 8080,
 					},
+					Weight: 20,
 				},
 				{
 					Object: &v1.Service{
@@ -1854,6 +1855,7 @@ func TestActionRoute(t *testing.T) {
 					ServicePort: &v1.ServicePort{
 						Port: 8080,
 					},
+					Weight: 30,
 				},
 			},
 			want: &route.Route_Route{
@@ -1862,9 +1864,12 @@ func TestActionRoute(t *testing.T) {
 						WeightedClusters: &route.WeightedCluster{
 							Clusters: []*route.WeightedCluster_ClusterWeight{{
 								Name:   "kuard/8080/da39a3ee5e",
-								Weight: u32(1),
+								Weight: u32(20),
+							}, {
+								Name:   "kuard/8080/da39a3ee5e",
+								Weight: u32(30),
 							}},
-							TotalWeight: u32(1),
+							TotalWeight: u32(50),
 						},
 					},
 				},
