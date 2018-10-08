@@ -23,6 +23,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	logrus "github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestEndpointsTranslatorAddEndpoints(t *testing.T) {
@@ -678,6 +679,94 @@ func TestEndpointsTranslatorEndpointWeights(t *testing.T) {
 			}
 
 			et.recomputeClusterLoadAssignment(tc.oldep, tc.newep)
+			got := contents(et)
+			sort.Stable(clusterLoadAssignmentsByName(got))
+			endpoints := got[0].(*v2.ClusterLoadAssignment).GetEndpoints()[0].GetLbEndpoints()
+			sort.Stable(endpointsByAddress(endpoints))
+			if !reflect.DeepEqual(tc.want, got) {
+				t.Fatalf("expected:\n%v\ngot:\n%v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestEndpointsTranslatorNodeWeightsUpdated(t *testing.T) {
+	tests := map[string]struct {
+		addedNode    *v1.Node
+		nodeWeights  map[string]int
+		setup        func(*EndpointsTranslator)
+		oldep, newep *v1.Endpoints
+		want         []proto.Message
+	}{
+		"on node weights updated": {
+			addedNode: &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "node5",
+					Annotations: map[string]string{
+						"weight-annotation": "128",
+					},
+				},
+			},
+
+			nodeWeights: map[string]int{
+				"node1": 5,
+				"node2": 10,
+				"node3": 20,
+				"node4": 40,
+				"node5": 80,
+			},
+			setup: func(et *EndpointsTranslator) {
+				et.OnAdd(eps("staging", "simple", v1.EndpointSubset{
+					Addresses: epaddresses(address("192.168.183.24", "node2")),
+					Ports:     ports(8080),
+				}))
+				et.OnAdd(eps("prod", "simple", v1.EndpointSubset{
+					Addresses: epaddresses(
+						address("192.168.183.25", "node1"),
+						address("192.168.183.26", "node2"),
+						address("192.168.183.27", "node3"),
+						address("192.168.183.28", "node4"),
+						address("192.168.183.29", "node5"),
+					),
+					Ports: ports(8080),
+				}))
+			},
+			oldep: eps("staging", "simple", v1.EndpointSubset{
+				Addresses: epaddresses(address("192.168.183.24", "node2")),
+				Ports:     ports(8080),
+			}),
+			want: []proto.Message{
+				clusterloadassignment("simple",
+					lbendpoint("192.168.183.25", 8080, 5),
+					lbendpoint("192.168.183.26", 8080, 10),
+					lbendpoint("192.168.183.27", 8080, 20),
+					lbendpoint("192.168.183.28", 8080, 40),
+					lbendpoint("192.168.183.29", 8080, 128),
+				),
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			nwp := nodeWeightProvider(nil).(*NodeWeightCache)
+			nwp.nodeWeights = tc.nodeWeights
+			nwp.NodeWeightAnnotation = "weight-annotation"
+			et := NewEndpointsTranslator(nil, nwp)
+			*et.ExcludeNamespaceFromServiceName = true
+			tc.setup(et)
+
+			if tc.oldep != nil && tc.newep != nil {
+				et.OnUpdate(tc.oldep, tc.newep)
+			} else if tc.oldep != nil {
+				et.OnDelete(tc.oldep)
+			} else if tc.newep != nil {
+				et.OnAdd(tc.newep)
+			}
+
+			if tc.addedNode != nil {
+				nwp.OnAdd(tc.addedNode)
+			}
+
 			got := contents(et)
 			sort.Stable(clusterLoadAssignmentsByName(got))
 			endpoints := got[0].(*v2.ClusterLoadAssignment).GetEndpoints()[0].GetLbEndpoints()
