@@ -64,8 +64,8 @@ func (d *discardWriter) Write(buf []byte) (int, error) {
 func setup(t *testing.T, opts ...func(*contour.ResourceEventHandler)) (cache.ResourceEventHandler, *grpc.ClientConn, func()) {
 	log := logrus.New()
 	log.Out = &testWriter{t}
-
-	et := contour.NewEndpointsTranslator(log, nodeWeightProvider(log))
+	nwp := nodeWeightProvider(log).(*contour.NodeWeightCache)
+	et := contour.NewEndpointsTranslator(log, nwp)
 
 	r := prometheus.NewRegistry()
 	ch := &contour.CacheHandler{
@@ -108,6 +108,7 @@ func setup(t *testing.T, opts ...func(*contour.ResourceEventHandler)) (cache.Res
 	rh := &resourceEventHandler{
 		ResourceEventHandler: &reh,
 		EndpointsTranslator:  et,
+		NodeWeightCache:      nwp,
 	}
 
 	return rh, cc, func() {
@@ -126,6 +127,7 @@ func setup(t *testing.T, opts ...func(*contour.ResourceEventHandler)) (cache.Res
 type resourceEventHandler struct {
 	*contour.ResourceEventHandler
 	*contour.EndpointsTranslator
+	*contour.NodeWeightCache
 }
 
 func (r *resourceEventHandler) OnAdd(obj interface{}) {

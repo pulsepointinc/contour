@@ -257,6 +257,84 @@ func TestIssue602(t *testing.T) {
 	}, streamEDS(t, cc))
 }
 
+func TestEndpointWeights(t *testing.T) {
+	rh, cc, done := setup(t)
+	defer done()
+
+	nwc := rh.(*resourceEventHandler).NodeWeightCache
+	nwc.NodeWeightAnnotation = "weight-annotation"
+	node1 := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+			Annotations: map[string]string{
+				"weight-annotation": "5",
+			},
+		},
+	}
+	nwc.OnAdd(node1)
+	node2 := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node2",
+			Annotations: map[string]string{
+				"weight-annotation": "10",
+			},
+		},
+	}
+	nwc.OnAdd(node2)
+
+	// e1 is a simple endpoint for two hosts, and two ports
+	// it has a long name to check that it's clustername is _not_
+	// hashed.
+	e1 := endpoints(
+		"super-long-namespace-name-oh-boy",
+		"what-a-descriptive-service-name-you-must-be-so-proud",
+		v1.EndpointSubset{
+			Addresses: epaddresses(
+				address("172.16.0.1", "node1"),
+				address("172.16.0.2", "node2"),
+			),
+			Ports: []v1.EndpointPort{{
+				Name: "http",
+				Port: 8000,
+			}, {
+				Name: "https",
+				Port: 8443,
+			}},
+		},
+	)
+
+	rh.OnAdd(e1)
+
+	// check that it's been translated correctly.
+	assertEqual(t, &v2.DiscoveryResponse{
+		VersionInfo: "0",
+		Resources: []types.Any{
+			any(t, clusterloadassignment(
+				"super-long-namespace-name-oh-boy/what-a-descriptive-service-name-you-must-be-so-proud/http",
+				lbendpoint("172.16.0.1", 8000, 5),
+				lbendpoint("172.16.0.2", 8000, 10),
+			)),
+			any(t, clusterloadassignment(
+				"super-long-namespace-name-oh-boy/what-a-descriptive-service-name-you-must-be-so-proud/https",
+				lbendpoint("172.16.0.1", 8443, 5),
+				lbendpoint("172.16.0.2", 8443, 10),
+			)),
+		},
+		TypeUrl: endpointType,
+		Nonce:   "0",
+	}, streamEDS(t, cc))
+
+	// remove e1 and check that the EDS cache is now empty.
+	rh.OnDelete(e1)
+
+	assertEqual(t, &v2.DiscoveryResponse{
+		VersionInfo: "0",
+		Resources:   []types.Any{},
+		TypeUrl:     endpointType,
+		Nonce:       "0",
+	}, streamEDS(t, cc))
+}
+
 func streamEDS(t *testing.T, cc *grpc.ClientConn, rn ...string) *v2.DiscoveryResponse {
 	t.Helper()
 	rds := v2.NewEndpointDiscoveryServiceClient(cc)
@@ -287,6 +365,21 @@ func addresses(ips ...string) []v1.EndpointAddress {
 	var addrs []v1.EndpointAddress
 	for _, ip := range ips {
 		addrs = append(addrs, v1.EndpointAddress{IP: ip})
+	}
+	return addrs
+}
+
+func address(ip, nodeName string) v1.EndpointAddress {
+	return v1.EndpointAddress{
+		IP:       ip,
+		NodeName: &nodeName,
+	}
+}
+
+func epaddresses(addys ...v1.EndpointAddress) []v1.EndpointAddress {
+	var addrs []v1.EndpointAddress
+	for _, addy := range addys {
+		addrs = append(addrs, addy)
 	}
 	return addrs
 }
