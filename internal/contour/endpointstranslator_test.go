@@ -67,6 +67,9 @@ func TestEndpointsTranslatorAddEndpoints(t *testing.T) {
 			et.OnAdd(tc.ep)
 			got := contents(et)
 			sort.Stable(clusterLoadAssignmentsByName(got))
+			endpoints := got[0].(*v2.ClusterLoadAssignment).GetEndpoints()[0].GetLbEndpoints()
+			sort.Stable(endpointsByAddress(endpoints))
+
 			if !reflect.DeepEqual(tc.want, got) {
 				t.Fatalf("got: %v, want: %v", got, tc.want)
 			}
@@ -220,6 +223,7 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignment(t *testing.T) {
 			et.recomputeClusterLoadAssignment(tc.oldep, tc.newep)
 			got := contents(et)
 			sort.Stable(clusterLoadAssignmentsByName(got))
+
 			if !reflect.DeepEqual(tc.want, got) {
 				t.Fatalf("expected:\n%v\ngot:\n%v", tc.want, got)
 			}
@@ -298,6 +302,9 @@ func TestEndpointsTranslatorAddEndpointsNamespaceExludedFromClusterNames(t *test
 			}
 			got := contents(et)
 			sort.Stable(clusterLoadAssignmentsByName(got))
+			endpoints := got[0].(*v2.ClusterLoadAssignment).GetEndpoints()[0].GetLbEndpoints()
+			sort.Stable(endpointsByAddress(endpoints))
+
 			if !reflect.DeepEqual(tc.want, got) {
 				t.Fatalf("got: %v, want: %v", got, tc.want)
 			}

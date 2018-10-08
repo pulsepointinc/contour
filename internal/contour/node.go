@@ -31,7 +31,7 @@ func NewNodeWeightProvider(fieldLogger logrus.FieldLogger) NodeWeightProvider {
 }
 
 func (nwp *NodeWeightCache) GetNodeWeight(nodeName *string) int {
-	if nodeName != nil {
+	if nodeName != nil && len(*nodeName) > 0 {
 		if weight, ok := nwp.nodeWeights[*nodeName]; ok {
 			return weight
 		}
@@ -63,6 +63,13 @@ func (nwp *NodeWeightCache) setWeight(node *v1.Node) {
 	}
 }
 
+func (nwp *NodeWeightCache) deleteWeight(node *v1.Node) {
+	if _, ok := nwp.nodeWeights[node.Name]; ok {
+		delete(nwp.nodeWeights, node.Name)
+		nwp.fireNodeWeightsChanged()
+	}
+}
+
 func (nwp *NodeWeightCache) OnAdd(obj interface{}) {
 	switch obj := obj.(type) {
 	case *v1.Node:
@@ -81,12 +88,6 @@ func (nwp *NodeWeightCache) OnUpdate(oldObj, newObj interface{}) {
 			return
 		}
 		nwp.updateWeight(oldObj, newObj)
-	case *v1.Endpoints:
-		oldObj, ok := oldObj.(*v1.Endpoints)
-		if !ok {
-			nwp.Errorf("OnUpdate endpoints %#v received invalid oldObj %T; %#v", newObj, oldObj, oldObj)
-			return
-		}
 	default:
 		nwp.Errorf("OnUpdate unexpected type %T: %#v", newObj, newObj)
 	}
@@ -95,7 +96,7 @@ func (nwp *NodeWeightCache) OnUpdate(oldObj, newObj interface{}) {
 func (nwp *NodeWeightCache) OnDelete(obj interface{}) {
 	switch obj := obj.(type) {
 	case *v1.Node:
-		delete(nwp.nodeWeights, obj.Name)
+		nwp.deleteWeight(obj)
 	case _cache.DeletedFinalStateUnknown:
 		nwp.OnDelete(obj.Obj) // recurse into ourselves with the tombstoned value
 	default:
