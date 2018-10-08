@@ -1830,7 +1830,7 @@ func TestActionRoute(t *testing.T) {
 				},
 			},
 		},
-		"multiple services from different namespaces when namespaceas are excluded from service name": {
+		"multiple services from different namespaces when namespace is excluded from service name": {
 			excludeNamespaceFromServiceName: true,
 			services: []*dag.Service{
 				{
