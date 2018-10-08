@@ -878,8 +878,9 @@ func TestClusterVisit(t *testing.T) {
 
 func TestClustername(t *testing.T) {
 	tests := map[string]struct {
-		service *dag.Service
-		want    string
+		service          *dag.Service
+		want             string
+		excludeNamespace bool
 	}{
 		"simple": {
 			service: &dag.Service{
@@ -925,11 +926,24 @@ func TestClustername(t *testing.T) {
 			},
 			want: "default/backend/80/32737eb011",
 		},
+		"excluded namespace": {
+			service: &dag.Service{
+				Object: svc("default", "backend"),
+				ServicePort: &v1.ServicePort{
+					Name:       "http",
+					Protocol:   "TCP",
+					Port:       80,
+					TargetPort: intstr.FromInt(6502),
+				},
+			},
+			want:             "backend/80/da39a3ee5e",
+			excludeNamespace: true,
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := clustername(tc.service, false)
+			got := clustername(tc.service, tc.excludeNamespace)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatal(diff)
 			}

@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2"
+	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/gogo/protobuf/proto"
 	logrus "github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
@@ -406,8 +407,8 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignmentNamespaceExludedFromCl
 			}),
 			want: []proto.Message{
 				clusterloadassignment("simple",
-					lbendpoint("192.168.183.25", 8080, 1),
 					lbendpoint("192.168.183.24", 8080, 1),
+					lbendpoint("192.168.183.25", 8080, 1),
 				),
 			},
 		},
@@ -450,12 +451,12 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignmentNamespaceExludedFromCl
 			}),
 			want: []proto.Message{
 				clusterloadassignment("simple/http",
+					lbendpoint("192.168.183.24", 8080, 1),
 					lbendpoint("192.168.183.25", 8080, 1),
 					lbendpoint("192.168.183.26", 8080, 1),
 					lbendpoint("192.168.183.27", 8080, 1),
 					lbendpoint("192.168.183.28", 8080, 1),
 					lbendpoint("192.168.183.29", 8080, 1),
-					lbendpoint("192.168.183.24", 8080, 1),
 				),
 			},
 		},
@@ -502,6 +503,8 @@ func TestEndpointsTranslatorRecomputeClusterLoadAssignmentNamespaceExludedFromCl
 			et.recomputeClusterLoadAssignment(tc.oldep, tc.newep)
 			got := contents(et)
 			sort.Stable(clusterLoadAssignmentsByName(got))
+			endpoints := got[0].(*v2.ClusterLoadAssignment).GetEndpoints()[0].GetLbEndpoints()
+			sort.Stable(endpointsByAddress(endpoints))
 			if !reflect.DeepEqual(tc.want, got) {
 				t.Fatalf("expected:\n%v\ngot:\n%v", tc.want, got)
 			}
@@ -515,6 +518,16 @@ func (c clusterLoadAssignmentsByName) Len() int      { return len(c) }
 func (c clusterLoadAssignmentsByName) Swap(i, j int) { c[i], c[j] = c[j], c[i] }
 func (c clusterLoadAssignmentsByName) Less(i, j int) bool {
 	return c[i].(*v2.ClusterLoadAssignment).ClusterName < c[j].(*v2.ClusterLoadAssignment).ClusterName
+}
+
+type endpointsByAddress []endpoint.LbEndpoint
+
+func (ep endpointsByAddress) Len() int      { return len(ep) }
+func (ep endpointsByAddress) Swap(i, j int) { ep[i], ep[j] = ep[j], ep[i] }
+func (ep endpointsByAddress) Less(i, j int) bool {
+	a1 := *ep[i].Endpoint.Address
+	a2 := *ep[j].Endpoint.Address
+	return a1.String() < a2.String()
 }
 
 func nodeWeightProvider(fieldLogger logrus.FieldLogger) NodeWeightProvider {
