@@ -39,8 +39,9 @@ func TestRouteVisit(t *testing.T) {
 
 	tests := map[string]struct {
 		*RouteCache
-		objs []interface{}
-		want map[string]*v2.RouteConfiguration
+		ExcludeNamespaceFromServiceName bool
+		objs                            []interface{}
+		want                            map[string]*v2.RouteConfiguration
 	}{
 		"nothing": {
 			objs: nil,
@@ -1310,6 +1311,77 @@ func TestRouteVisit(t *testing.T) {
 				},
 			},
 		},
+		"two ingresses with the same routes from two different namespaces and two services with the same name and namespace is excluded from service name": {
+			ExcludeNamespaceFromServiceName: true,
+			objs: []interface{}{
+				&v1beta1.Ingress{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kuard",
+						Namespace: "default",
+					},
+					Spec: v1beta1.IngressSpec{
+						Backend: &v1beta1.IngressBackend{
+							ServiceName: "kuard",
+							ServicePort: intstr.FromInt(8080),
+						},
+					},
+				},
+				&v1beta1.Ingress{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kuard",
+						Namespace: "nondefault",
+					},
+					Spec: v1beta1.IngressSpec{
+						Backend: &v1beta1.IngressBackend{
+							ServiceName: "kuard",
+							ServicePort: intstr.FromInt(8080),
+						},
+					},
+				},
+				&v1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kuard",
+						Namespace: "default",
+					},
+					Spec: v1.ServiceSpec{
+						Ports: []v1.ServicePort{{
+							Protocol:   "TCP",
+							Port:       8080,
+							TargetPort: intstr.FromInt(8080),
+						}},
+					},
+				},
+				&v1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kuard",
+						Namespace: "nondefault",
+					},
+					Spec: v1.ServiceSpec{
+						Ports: []v1.ServicePort{{
+							Protocol:   "TCP",
+							Port:       8080,
+							TargetPort: intstr.FromInt(8080),
+						}},
+					},
+				},
+			},
+			want: map[string]*v2.RouteConfiguration{
+				"ingress_http": {
+					Name: "ingress_http",
+					VirtualHosts: []route.VirtualHost{{
+						Name:    "*",
+						Domains: []string{"*"},
+						Routes: []route.Route{{
+							Match:  prefixmatch("/"),
+							Action: routeroute("kuard/8080/da39a3ee5e"),
+						}},
+					}},
+				},
+				"ingress_https": {
+					Name: "ingress_https",
+				},
+			},
+		},
 	}
 
 	for name, tc := range tests {
@@ -1326,8 +1398,9 @@ func TestRouteVisit(t *testing.T) {
 				rc = new(RouteCache)
 			}
 			v := routeVisitor{
-				RouteCache: rc,
-				Visitable:  reh.Build(),
+				RouteCache:                      rc,
+				Visitable:                       reh.Build(),
+				ExcludeNamespaceFromServiceName: tc.ExcludeNamespaceFromServiceName,
 			}
 			got := v.Visit()
 			if diff := cmp.Diff(tc.want, got); diff != "" {
@@ -1381,9 +1454,10 @@ func routeretry(cluster string, retryOn string, numRetries uint32, perTryTimeout
 
 func TestActionRoute(t *testing.T) {
 	tests := map[string]struct {
-		route    dag.Route
-		services []*dag.Service
-		want     *route.Route_Route
+		route                           dag.Route
+		services                        []*dag.Service
+		want                            *route.Route_Route
+		excludeNamespaceFromServiceName bool
 	}{
 		"single service": {
 			services: []*dag.Service{
@@ -1756,11 +1830,51 @@ func TestActionRoute(t *testing.T) {
 				},
 			},
 		},
+		"multiple services from different namespaces when namespaceas are excluded from service name": {
+			excludeNamespaceFromServiceName: true,
+			services: []*dag.Service{
+				{
+					Object: &v1.Service{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "kuard",
+							Namespace: "default",
+						},
+					},
+					ServicePort: &v1.ServicePort{
+						Port: 8080,
+					},
+				},
+				{
+					Object: &v1.Service{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "kuard",
+							Namespace: "nondefault",
+						},
+					},
+					ServicePort: &v1.ServicePort{
+						Port: 8080,
+					},
+				},
+			},
+			want: &route.Route_Route{
+				Route: &route.RouteAction{
+					ClusterSpecifier: &route.RouteAction_WeightedClusters{
+						WeightedClusters: &route.WeightedCluster{
+							Clusters: []*route.WeightedCluster_ClusterWeight{{
+								Name:   "kuard/8080/da39a3ee5e",
+								Weight: u32(1),
+							}},
+							TotalWeight: u32(1),
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := actionroute(&tc.route, tc.services, false)
+			got := actionroute(&tc.route, tc.services, tc.excludeNamespaceFromServiceName)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatal(diff)
 			}

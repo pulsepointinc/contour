@@ -285,18 +285,27 @@ func actionroute(r *dag.Route, services []*dag.Service, excludeNamespaceFromServ
 }
 
 func weightedclusters(services []*dag.Service, excludeNamespaceFromServiceName bool) *route.WeightedCluster {
+	clusters := make(map[string]*route.WeightedCluster_ClusterWeight)
 	var wc route.WeightedCluster
-	var total int
+	var total uint32
+
 	for _, svc := range services {
-		total += svc.Weight
-		wc.Clusters = append(wc.Clusters, &route.WeightedCluster_ClusterWeight{
+		clusterName := clustername(svc, excludeNamespaceFromServiceName)
+		clusters[clusterName] = &route.WeightedCluster_ClusterWeight{
 			Name:   clustername(svc, excludeNamespaceFromServiceName),
 			Weight: &types.UInt32Value{Value: uint32(svc.Weight)},
-		})
+		}
 	}
+
+	for _, clusterWeight := range clusters {
+		total += clusterWeight.GetWeight().Value
+		wc.Clusters = append(wc.Clusters, clusterWeight)
+	}
+
 	wc.TotalWeight = &types.UInt32Value{
 		Value: uint32(total),
 	}
+
 	sort.Stable(clusterWeightByName(wc.Clusters))
 	return &wc
 }
