@@ -62,6 +62,21 @@ func addresses(ips ...string) []v1.EndpointAddress {
 	return addrs
 }
 
+func address(ip, nodeName string) v1.EndpointAddress {
+	return v1.EndpointAddress{
+		IP:       ip,
+		NodeName: &nodeName,
+	}
+}
+
+func epaddresses(addys ...v1.EndpointAddress) []v1.EndpointAddress {
+	var addrs []v1.EndpointAddress
+	for _, addy := range addys {
+		addrs = append(addrs, addy)
+	}
+	return addrs
+}
+
 func ports(ps ...int32) []v1.EndpointPort {
 	var ports []v1.EndpointPort
 	for _, p := range ps {
