@@ -19,6 +19,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
+	"github.com/gogo/protobuf/types"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +32,22 @@ type EndpointsTranslator struct {
 	logrus.FieldLogger
 	clusterLoadAssignmentCache
 	Cond
+	nodeWeightProvider              NodeWeightProvider
+	services                        map[string]*service
+	ExcludeNamespaceFromServiceName *bool
+}
+
+func NewEndpointsTranslator(fieldLogger logrus.FieldLogger, nwp NodeWeightProvider) *EndpointsTranslator {
+	ep := EndpointsTranslator{
+		FieldLogger:                     fieldLogger,
+		services:                        make(map[string]*service),
+		nodeWeightProvider:              nwp,
+		ExcludeNamespaceFromServiceName: falsePtr(),
+	}
+	ep.nodeWeightProvider.RegisterOnNodeWeightsChanged(func() {
+		ep.onNodeWeightsChanged()
+	})
+	return &ep
 }
 
 func (e *EndpointsTranslator) OnAdd(obj interface{}) {
@@ -68,6 +85,7 @@ func (e *EndpointsTranslator) OnDelete(obj interface{}) {
 }
 
 func (e *EndpointsTranslator) addEndpoints(ep *v1.Endpoints) {
+	e.getService(ep.GetName()).set(ep)
 	e.recomputeClusterLoadAssignment(nil, ep)
 }
 
@@ -78,11 +96,27 @@ func (e *EndpointsTranslator) updateEndpoints(oldep, newep *v1.Endpoints) {
 		// to avoid sending a noop notification to watchers.
 		return
 	}
+	e.getService(newep.GetName()).set(newep)
 	e.recomputeClusterLoadAssignment(oldep, newep)
 }
 
 func (e *EndpointsTranslator) removeEndpoints(ep *v1.Endpoints) {
+	e.getService(ep.GetName()).remove(ep)
 	e.recomputeClusterLoadAssignment(ep, nil)
+}
+
+// onNodeWeightsChanged any cluster load assignment might not reflect the new weight and therefore we need to re-run translation again
+func (e EndpointsTranslator) onNodeWeightsChanged() {
+	for _, svc := range e.services {
+		if len(svc.endpoints) > 0 {
+			for _, ep := range svc.endpoints {
+				e.recomputeClusterLoadAssignment(nil, ep.endpoints)
+				if *e.ExcludeNamespaceFromServiceName {
+					break
+				}
+			}
+		}
+	}
 }
 
 // recomputeClusterLoadAssignment recomputes the EDS cache taking into account old and new endpoints.
@@ -106,27 +140,40 @@ func (e *EndpointsTranslator) recomputeClusterLoadAssignment(oldep, newep *v1.En
 		}
 	}
 
+	ignoreNamespace := *e.ExcludeNamespaceFromServiceName
 	clas := make(map[string]*v2.ClusterLoadAssignment)
-	// add or update endpoints
-	for _, s := range newep.Subsets {
-		// skip any subsets that don't have ready addresses
-		if len(s.Addresses) == 0 {
-			continue
-		}
 
-		for _, p := range s.Ports {
-			// TODO(dfc) check protocol, don't add UDP enties by mistake
+	var eps []*v1.Endpoints
 
-			// if this endpoint's service's port has a name, then the endpoint
-			// controller will apply the name here. The name may appear once per subset.
-			portname := p.Name
-			cla, ok := clas[portname]
-			if !ok {
-				cla = clusterloadassignment(servicename(newep.ObjectMeta, portname))
-				clas[portname] = cla
+	if ignoreNamespace {
+		eps = e.getService(newep.GetName()).getEndpoints()
+	} else {
+		eps = []*v1.Endpoints{newep}
+	}
+
+	for _, ep := range eps {
+		// add or update endpoints
+		for _, s := range ep.Subsets {
+			// skip any subsets that don't have ready addresses
+			if len(s.Addresses) == 0 {
+				continue
 			}
-			for _, a := range s.Addresses {
-				cla.Endpoints[0].LbEndpoints = append(cla.Endpoints[0].LbEndpoints, lbendpoint(a.IP, p.Port))
+
+			for _, p := range s.Ports {
+				// TODO(dfc) check protocol, don't add UDP enties by mistake
+
+				// if this endpoint's service's port has a name, then the endpoint
+				// controller will apply the name here. The name may appear once per subset.
+				portname := p.Name
+				cla, ok := clas[portname]
+				if !ok {
+					svcName := servicename(ep.ObjectMeta, portname, ignoreNamespace)
+					cla = clusterloadassignment(svcName)
+					clas[portname] = cla
+				}
+				for _, a := range s.Addresses {
+					cla.Endpoints[0].LbEndpoints = append(cla.Endpoints[0].LbEndpoints, lbendpoint(a.IP, p.Port, e.nodeWeight(a.NodeName)))
+				}
 			}
 		}
 	}
@@ -148,16 +195,23 @@ func (e *EndpointsTranslator) recomputeClusterLoadAssignment(oldep, newep *v1.En
 			portname := p.Name
 			if _, ok := clas[portname]; !ok {
 				// port is not present in the list added / updated, so remove it
-				e.Remove(servicename(oldep.ObjectMeta, portname))
+				e.Remove(servicename(oldep.ObjectMeta, portname, ignoreNamespace))
 			}
 		}
 	}
 }
 
+func (e *EndpointsTranslator) nodeWeight(nodeName *string) int {
+	if e.nodeWeightProvider != nil {
+		return e.nodeWeightProvider.GetNodeWeight(nodeName)
+	}
+	return 1
+}
+
 // servicename returns the name of the cluster this meta and port
 // refers to. The CDS name of the cluster may include additional suffixes
 // but these are not known to EDS.
-func servicename(meta metav1.ObjectMeta, portname string) string {
+func servicename(meta metav1.ObjectMeta, portname string, ignoreNamespace bool) string {
 	name := []string{
 		meta.Namespace,
 		meta.Name,
@@ -166,6 +220,10 @@ func servicename(meta metav1.ObjectMeta, portname string) string {
 	if portname == "" {
 		name = name[:2]
 	}
+	if ignoreNamespace {
+		name = name[1:]
+	}
+
 	return strings.Join(name, "/")
 }
 
@@ -178,8 +236,8 @@ func clusterloadassignment(name string, lbendpoints ...endpoint.LbEndpoint) *v2.
 	}
 }
 
-func lbendpoint(addr string, port int32) endpoint.LbEndpoint {
-	return endpoint.LbEndpoint{
+func lbendpoint(addr string, port int32, weight int) endpoint.LbEndpoint {
+	lbe := endpoint.LbEndpoint{
 		Endpoint: &endpoint.Endpoint{
 			Address: &core.Address{
 				Address: &core.Address_SocketAddress{
@@ -194,4 +252,62 @@ func lbendpoint(addr string, port int32) endpoint.LbEndpoint {
 			},
 		},
 	}
+
+	if weight != 1 {
+		lbe.LoadBalancingWeight = &types.UInt32Value{Value: uint32(weight)}
+	}
+
+	return lbe
+}
+
+type service struct {
+	name      string
+	endpoints map[string]*endpoints
+}
+
+func (e *EndpointsTranslator) getService(endpointName string) *service {
+	svc := e.services[endpointName]
+	if svc == nil {
+		svc = new(service)
+		svc.name = endpointName
+		svc.endpoints = make(map[string]*endpoints)
+		e.services[endpointName] = svc
+	}
+	return svc
+}
+
+func (svc *service) set(ep *v1.Endpoints) {
+	svc.endpoints[ep.GetNamespace()] = &endpoints{
+		namespace: ep.GetNamespace(),
+		endpoints: ep,
+	}
+}
+
+func (svc *service) remove(ep *v1.Endpoints) {
+	delete(svc.endpoints, ep.GetNamespace())
+}
+
+func (svc *service) getEndpoints() []*v1.Endpoints {
+	eps := make([]*v1.Endpoints, len(svc.endpoints))
+	ix := 0
+	for _, ep := range svc.endpoints {
+		eps[ix] = ep.endpoints
+		ix++
+	}
+	return eps
+}
+
+type endpoints struct {
+	namespace string
+	endpoints *v1.Endpoints
+}
+
+func falsePtr() *bool {
+	r := false
+	return &r
+}
+
+func truePtr() *bool {
+	r := true
+	return &r
 }

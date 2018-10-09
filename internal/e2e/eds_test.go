@@ -22,6 +22,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/endpoint"
 	"github.com/gogo/protobuf/types"
+	google_protobuf "github.com/gogo/protobuf/types"
 	"google.golang.org/grpc"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,13 +63,13 @@ func TestAddRemoveEndpoints(t *testing.T) {
 		Resources: []types.Any{
 			any(t, clusterloadassignment(
 				"super-long-namespace-name-oh-boy/what-a-descriptive-service-name-you-must-be-so-proud/http",
-				lbendpoint("172.16.0.1", 8000),
-				lbendpoint("172.16.0.2", 8000),
+				lbendpoint("172.16.0.1", 8000, 1),
+				lbendpoint("172.16.0.2", 8000, 1),
 			)),
 			any(t, clusterloadassignment(
 				"super-long-namespace-name-oh-boy/what-a-descriptive-service-name-you-must-be-so-proud/https",
-				lbendpoint("172.16.0.1", 8443),
-				lbendpoint("172.16.0.2", 8443),
+				lbendpoint("172.16.0.1", 8443, 1),
+				lbendpoint("172.16.0.2", 8443, 1),
 			)),
 		},
 		TypeUrl: endpointType,
@@ -144,13 +145,13 @@ func TestAddEndpointComplicated(t *testing.T) {
 		Resources: []types.Any{
 			any(t, clusterloadassignment(
 				"default/kuard/admin",
-				lbendpoint("10.48.1.77", 9000),
-				lbendpoint("10.48.1.78", 9000),
+				lbendpoint("10.48.1.77", 9000, 1),
+				lbendpoint("10.48.1.78", 9000, 1),
 			)),
 			any(t, clusterloadassignment(
 				"default/kuard/foo",
-				lbendpoint("10.48.1.77", 9999), // TODO(dfc) order is not guaranteed by endpoint controller
-				lbendpoint("10.48.1.78", 8080),
+				lbendpoint("10.48.1.77", 9999, 1), // TODO(dfc) order is not guaranteed by endpoint controller
+				lbendpoint("10.48.1.78", 8080, 1),
 			)),
 		},
 		TypeUrl: endpointType,
@@ -204,8 +205,8 @@ func TestEndpointFilter(t *testing.T) {
 		Resources: []types.Any{
 			any(t, clusterloadassignment(
 				"default/kuard/foo",
-				lbendpoint("10.48.1.77", 9999), // TODO(dfc) order is not guaranteed by endpoint controller
-				lbendpoint("10.48.1.78", 8080),
+				lbendpoint("10.48.1.77", 9999, 1), // TODO(dfc) order is not guaranteed by endpoint controller
+				lbendpoint("10.48.1.78", 8080, 1),
 			)),
 		},
 		TypeUrl: endpointType,
@@ -238,7 +239,7 @@ func TestIssue602(t *testing.T) {
 	assertEqual(t, &v2.DiscoveryResponse{
 		VersionInfo: "0",
 		Resources: []types.Any{
-			any(t, clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080))),
+			any(t, clusterloadassignment("default/simple", lbendpoint("192.168.183.24", 8080, 1))),
 		},
 		TypeUrl: endpointType,
 		Nonce:   "0",
@@ -247,6 +248,84 @@ func TestIssue602(t *testing.T) {
 	// e2 is the same as e1, but without endpoint subsets
 	e2 := endpoints("default", "simple")
 	rh.OnUpdate(e1, e2)
+
+	assertEqual(t, &v2.DiscoveryResponse{
+		VersionInfo: "0",
+		Resources:   []types.Any{},
+		TypeUrl:     endpointType,
+		Nonce:       "0",
+	}, streamEDS(t, cc))
+}
+
+func TestEndpointWeights(t *testing.T) {
+	rh, cc, done := setup(t)
+	defer done()
+
+	nwc := rh.(*resourceEventHandler).NodeWeightCache
+	nwc.NodeWeightAnnotation = "weight-annotation"
+	node1 := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+			Annotations: map[string]string{
+				"weight-annotation": "5",
+			},
+		},
+	}
+	nwc.OnAdd(node1)
+	node2 := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node2",
+			Annotations: map[string]string{
+				"weight-annotation": "10",
+			},
+		},
+	}
+	nwc.OnAdd(node2)
+
+	// e1 is a simple endpoint for two hosts, and two ports
+	// it has a long name to check that it's clustername is _not_
+	// hashed.
+	e1 := endpoints(
+		"super-long-namespace-name-oh-boy",
+		"what-a-descriptive-service-name-you-must-be-so-proud",
+		v1.EndpointSubset{
+			Addresses: epaddresses(
+				address("172.16.0.1", "node1"),
+				address("172.16.0.2", "node2"),
+			),
+			Ports: []v1.EndpointPort{{
+				Name: "http",
+				Port: 8000,
+			}, {
+				Name: "https",
+				Port: 8443,
+			}},
+		},
+	)
+
+	rh.OnAdd(e1)
+
+	// check that it's been translated correctly.
+	assertEqual(t, &v2.DiscoveryResponse{
+		VersionInfo: "0",
+		Resources: []types.Any{
+			any(t, clusterloadassignment(
+				"super-long-namespace-name-oh-boy/what-a-descriptive-service-name-you-must-be-so-proud/http",
+				lbendpoint("172.16.0.1", 8000, 5),
+				lbendpoint("172.16.0.2", 8000, 10),
+			)),
+			any(t, clusterloadassignment(
+				"super-long-namespace-name-oh-boy/what-a-descriptive-service-name-you-must-be-so-proud/https",
+				lbendpoint("172.16.0.1", 8443, 5),
+				lbendpoint("172.16.0.2", 8443, 10),
+			)),
+		},
+		TypeUrl: endpointType,
+		Nonce:   "0",
+	}, streamEDS(t, cc))
+
+	// remove e1 and check that the EDS cache is now empty.
+	rh.OnDelete(e1)
 
 	assertEqual(t, &v2.DiscoveryResponse{
 		VersionInfo: "0",
@@ -290,6 +369,21 @@ func addresses(ips ...string) []v1.EndpointAddress {
 	return addrs
 }
 
+func address(ip, nodeName string) v1.EndpointAddress {
+	return v1.EndpointAddress{
+		IP:       ip,
+		NodeName: &nodeName,
+	}
+}
+
+func epaddresses(addys ...v1.EndpointAddress) []v1.EndpointAddress {
+	var addrs []v1.EndpointAddress
+	for _, addy := range addys {
+		addrs = append(addrs, addy)
+	}
+	return addrs
+}
+
 func clusterloadassignment(name string, lbendpoints ...endpoint.LbEndpoint) *v2.ClusterLoadAssignment {
 	return &v2.ClusterLoadAssignment{
 		ClusterName: name,
@@ -298,8 +392,8 @@ func clusterloadassignment(name string, lbendpoints ...endpoint.LbEndpoint) *v2.
 		}},
 	}
 }
-func lbendpoint(addr string, port uint32) endpoint.LbEndpoint {
-	return endpoint.LbEndpoint{
+func lbendpoint(addr string, port uint32, weight int) endpoint.LbEndpoint {
+	lbep := endpoint.LbEndpoint{
 		Endpoint: &endpoint.Endpoint{
 			Address: &core.Address{
 				Address: &core.Address_SocketAddress{
@@ -314,4 +408,12 @@ func lbendpoint(addr string, port uint32) endpoint.LbEndpoint {
 			},
 		},
 	}
+
+	if weight != 1 {
+		lbep.LoadBalancingWeight = &google_protobuf.UInt32Value{
+			Value: uint32(weight),
+		}
+	}
+
+	return lbep
 }

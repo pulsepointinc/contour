@@ -4353,7 +4353,7 @@ func route(prefix string, obj interface{}, services ...map[servicemeta]*Service)
 func servicemap(services ...*Service) map[servicemeta]*Service {
 	m := make(map[servicemeta]*Service)
 	for _, s := range services {
-		m[s.toMeta()] = s
+		m[s.toMeta(false)] = s
 	}
 	return m
 }

@@ -33,6 +33,8 @@ type CacheHandler struct {
 	IngressRouteStatus *k8s.IngressRouteStatus
 	logrus.FieldLogger
 	*metrics.Metrics
+
+	ExcludeNamespaceFromServiceName bool
 }
 
 type statusable interface {
@@ -69,8 +71,9 @@ func (ch *CacheHandler) updateListeners(v dag.Visitable) {
 
 func (ch *CacheHandler) updateRoutes(v dag.Visitable) {
 	rv := routeVisitor{
-		RouteCache: &ch.RouteCache,
-		Visitable:  v,
+		RouteCache:                      &ch.RouteCache,
+		Visitable:                       v,
+		ExcludeNamespaceFromServiceName: ch.ExcludeNamespaceFromServiceName,
 	}
 	routes := rv.Visit()
 	ch.RouteCache.Update(routes)
@@ -78,8 +81,9 @@ func (ch *CacheHandler) updateRoutes(v dag.Visitable) {
 
 func (ch *CacheHandler) updateClusters(v dag.Visitable) {
 	cv := clusterVisitor{
-		ClusterCache: &ch.ClusterCache,
-		Visitable:    v,
+		ClusterCache:                    &ch.ClusterCache,
+		Visitable:                       v,
+		ExcludeNamespaceFromServiceName: ch.ExcludeNamespaceFromServiceName,
 	}
 	ch.clusterCache.Update(cv.Visit())
 }

@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/heptio/contour/internal/dag"
+
 	"github.com/heptio/contour/internal/debug"
 	clientset "github.com/heptio/contour/internal/generated/clientset/versioned"
 	"github.com/heptio/contour/internal/httpsvc"
@@ -85,6 +87,8 @@ func main() {
 		FieldLogger: log.WithField("context", "CacheHandler"),
 	}
 
+	serve.Flag("exclude-namespace-from-service-name", "Set to true if you want to combine endpoints from services running in different namespaces").Default("false").BoolVar(&ch.ExcludeNamespaceFromServiceName)
+
 	metricsvc := metrics.Service{
 		Service: httpsvc.Service{
 			FieldLogger: log.WithField("context", "metricsvc"),
@@ -106,6 +110,9 @@ func main() {
 			Notifier:    &ch,
 			FieldLogger: log.WithField("context", "HoldoffNotifier"),
 			Metrics:     metrics,
+		},
+		Builder: dag.Builder{
+			ExcludeNamespaceFromServiceName: &ch.ExcludeNamespaceFromServiceName,
 		},
 	}
 
@@ -134,6 +141,10 @@ func main() {
 	serve.Flag("use-proxy-protocol", "Use PROXY protocol for all listeners").BoolVar(&ch.UseProxyProto)
 	serve.Flag("ingress-class-name", "Contour IngressClass name").StringVar(&reh.IngressClass)
 	serve.Flag("ingressroute-root-namespaces", "Restrict contour to searching these namespaces for root ingress routes").StringVar(&ingressrouteRootNamespaceFlag)
+
+	nwp := contour.NewNodeWeightProvider(log.WithField("context", "nodeweightprovider")).(*contour.NodeWeightCache)
+	serve.Flag("node-weight-annotation", "Name of the weigh annotation on a node object").Default("ingress.kubernetes.io/node-weight").StringVar(&nwp.NodeWeightAnnotation)
+	serve.Flag("node-weight-default", "Default weight for node if the node-weight-annotation is not present on node object").Default("1").IntVar(&nwp.DefaultNodeWeight)
 
 	args := os.Args[1:]
 	switch kingpin.MustParse(app.Parse(args)) {
@@ -171,6 +182,7 @@ func main() {
 		k8s.WatchIngress(&g, client, wl, &reh)
 		k8s.WatchSecrets(&g, client, wl, &reh)
 		k8s.WatchIngressRoutes(&g, contourClient, wl, &reh)
+		k8s.WatchNodes(&g, client, wl, nwp)
 
 		ch.IngressRouteStatus = &k8s.IngressRouteStatus{
 			Client: contourClient,
@@ -178,9 +190,9 @@ func main() {
 
 		// Endpoints updates are handled directly by the EndpointsTranslator
 		// due to their high update rate and their orthogonal nature.
-		et := &contour.EndpointsTranslator{
-			FieldLogger: log.WithField("context", "endpointstranslator"),
-		}
+		et := contour.NewEndpointsTranslator(log.WithField("context", "endpointstranslator"), nwp)
+		et.ExcludeNamespaceFromServiceName = &ch.ExcludeNamespaceFromServiceName
+
 		k8s.WatchEndpoints(&g, client, wl, et)
 
 		ch.Metrics = metrics

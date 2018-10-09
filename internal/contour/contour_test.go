@@ -44,7 +44,7 @@ func contents(v interface {
 	return v.Values(func(string) bool { return true })
 }
 
-func endpoints(ns, name string, subsets ...v1.EndpointSubset) *v1.Endpoints {
+func eps(ns, name string, subsets ...v1.EndpointSubset) *v1.Endpoints {
 	return &v1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -62,12 +62,34 @@ func addresses(ips ...string) []v1.EndpointAddress {
 	return addrs
 }
 
+func address(ip, nodeName string) v1.EndpointAddress {
+	return v1.EndpointAddress{
+		IP:       ip,
+		NodeName: &nodeName,
+	}
+}
+
+func epaddresses(addys ...v1.EndpointAddress) []v1.EndpointAddress {
+	var addrs []v1.EndpointAddress
+	for _, addy := range addys {
+		addrs = append(addrs, addy)
+	}
+	return addrs
+}
+
 func ports(ps ...int32) []v1.EndpointPort {
 	var ports []v1.EndpointPort
 	for _, p := range ps {
 		ports = append(ports, v1.EndpointPort{Port: p})
 	}
 	return ports
+}
+
+func port(port int32, portName string) v1.EndpointPort {
+	return v1.EndpointPort{
+		Name: portName,
+		Port: port,
+	}
 }
 
 type nullNotifier int

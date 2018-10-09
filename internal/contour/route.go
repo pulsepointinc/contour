@@ -95,6 +95,7 @@ func (c *routeCache) Values(filter func(string) bool) []proto.Message {
 type routeVisitor struct {
 	*RouteCache
 	dag.Visitable
+	ExcludeNamespaceFromServiceName bool
 }
 
 func (v *routeVisitor) Visit() map[string]*v2.RouteConfiguration {
@@ -135,7 +136,7 @@ func (v *routeVisitor) Visit() map[string]*v2.RouteConfiguration {
 					}
 					rr := route.Route{
 						Match:  prefixmatch(r.Prefix),
-						Action: actionroute(r, svcs),
+						Action: actionroute(r, svcs, v.ExcludeNamespaceFromServiceName),
 					}
 
 					if r.HTTPSUpgrade {
@@ -178,7 +179,7 @@ func (v *routeVisitor) Visit() map[string]*v2.RouteConfiguration {
 					}
 					vhost.Routes = append(vhost.Routes, route.Route{
 						Match:  prefixmatch(r.Prefix),
-						Action: actionroute(r, svcs),
+						Action: actionroute(r, svcs, v.ExcludeNamespaceFromServiceName),
 					})
 				}
 			})
@@ -233,11 +234,11 @@ func prefixmatch(prefix string) route.RouteMatch {
 
 // action computes the cluster route action, a *route.Route_route for the
 // supplied ingress and backend.
-func actionroute(r *dag.Route, services []*dag.Service) *route.Route_Route {
+func actionroute(r *dag.Route, services []*dag.Service, excludeNamespaceFromServiceName bool) *route.Route_Route {
 	rr := route.Route_Route{
 		Route: &route.RouteAction{
 			ClusterSpecifier: &route.RouteAction_WeightedClusters{
-				WeightedClusters: weightedclusters(services),
+				WeightedClusters: weightedclusters(services, excludeNamespaceFromServiceName),
 			},
 		},
 	}
@@ -283,13 +284,13 @@ func actionroute(r *dag.Route, services []*dag.Service) *route.Route_Route {
 	return &rr
 }
 
-func weightedclusters(services []*dag.Service) *route.WeightedCluster {
+func weightedclusters(services []*dag.Service, excludeNamespaceFromServiceName bool) *route.WeightedCluster {
 	var wc route.WeightedCluster
 	var total int
 	for _, svc := range services {
 		total += svc.Weight
 		wc.Clusters = append(wc.Clusters, &route.WeightedCluster_ClusterWeight{
-			Name:   clustername(svc),
+			Name:   clustername(svc, excludeNamespaceFromServiceName),
 			Weight: &types.UInt32Value{Value: uint32(svc.Weight)},
 		})
 	}

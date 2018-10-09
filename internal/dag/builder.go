@@ -129,6 +129,7 @@ func (kc *KubernetesCache) remove(obj interface{}) {
 // A Builder builds a *DAGs
 type Builder struct {
 	KubernetesCache
+	ExcludeNamespaceFromServiceName *bool
 }
 
 // Build builds a new *DAG.
@@ -150,6 +151,13 @@ type builder struct {
 	orphaned map[meta]bool
 
 	statuses []Status
+}
+
+func (b *builder) ignoreNamespace() bool {
+	if b.source.ExcludeNamespaceFromServiceName != nil {
+		return *b.source.ExcludeNamespaceFromServiceName
+	}
+	return false
 }
 
 // lookupService returns a Service that matches the meta and port supplied.
@@ -211,7 +219,7 @@ func (b *builder) addService(svc *v1.Service, port *v1.ServicePort, weight int, 
 		MaxRequests:        parseAnnotation(svc.Annotations, annotationMaxRequests),
 		MaxRetries:         parseAnnotation(svc.Annotations, annotationMaxRetries),
 	}
-	b.services[s.toMeta()] = s
+	b.services[s.toMeta(b.ignoreNamespace())] = s
 	return s
 }
 
@@ -326,7 +334,7 @@ func (b *builder) compute() *DAG {
 				r := prefixRoute(ing, prefix)
 				m := meta{name: httppath.Backend.ServiceName, namespace: ing.Namespace}
 				if s := b.lookupService(m, httppath.Backend.ServicePort, 0, "", nil); s != nil {
-					r.addService(s)
+					r.addService(s, b.ignoreNamespace())
 				}
 
 				// should we create port 80 routes for this ingress
@@ -554,7 +562,7 @@ func (b *builder) processIngressRoute(ir *ingressroutev1.IngressRoute, prefixMat
 				}
 				m := meta{name: s.Name, namespace: ir.Namespace}
 				if svc := b.lookupService(m, intstr.FromInt(s.Port), s.Weight, s.Strategy, s.HealthCheck); svc != nil {
-					r.addService(svc)
+					r.addService(svc, b.ignoreNamespace())
 				}
 			}
 
