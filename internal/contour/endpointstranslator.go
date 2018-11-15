@@ -106,7 +106,7 @@ func (e *EndpointsTranslator) removeEndpoints(ep *v1.Endpoints) {
 }
 
 // onNodeWeightsChanged any cluster load assignment might not reflect the new weight and therefore we need to re-run translation again
-func (e EndpointsTranslator) onNodeWeightsChanged() {
+func (e *EndpointsTranslator) onNodeWeightsChanged() {
 	for _, svc := range e.services {
 		if len(svc.endpoints) > 0 {
 			for _, ep := range svc.endpoints {
@@ -304,10 +304,5 @@ type endpoints struct {
 
 func falsePtr() *bool {
 	r := false
-	return &r
-}
-
-func truePtr() *bool {
-	r := true
 	return &r
 }
