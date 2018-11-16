@@ -57,7 +57,7 @@ func TestNodeWeightProvider(t *testing.T) {
 		},
 		"update weight from annotation": {
 			initialState: []*v1.Node{
-				&v1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
@@ -89,7 +89,7 @@ func TestNodeWeightProvider(t *testing.T) {
 		},
 		"delete weight from annotation": {
 			initialState: []*v1.Node{
-				&v1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
@@ -174,7 +174,7 @@ func TestNodeWeightProvider(t *testing.T) {
 		},
 		"wrong old type updated": {
 			initialState: []*v1.Node{
-				&v1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
@@ -207,7 +207,7 @@ func TestNodeWeightProvider(t *testing.T) {
 		},
 		"wrong new type updated": {
 			initialState: []*v1.Node{
-				&v1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
@@ -239,7 +239,7 @@ func TestNodeWeightProvider(t *testing.T) {
 		},
 		"wrong type deleted": {
 			initialState: []*v1.Node{
-				&v1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
@@ -265,7 +265,7 @@ func TestNodeWeightProvider(t *testing.T) {
 
 		"delete final state unknown": {
 			initialState: []*v1.Node{
-				&v1.Node{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "node1",
 						Annotations: map[string]string{
