@@ -139,6 +139,7 @@ func main() {
 	serve.Flag("envoy-http-port", "Envoy HTTP listener port").IntVar(&ch.HTTPPort)
 	serve.Flag("envoy-https-port", "Envoy HTTPS listener port").IntVar(&ch.HTTPSPort)
 	serve.Flag("use-proxy-protocol", "Use PROXY protocol for all listeners").BoolVar(&ch.UseProxyProto)
+	serve.Flag("idle-connection-timeout", "Downstream idle connection timeout").Default("10s").DurationVar(&ch.IdleConnectionTimeout)
 	serve.Flag("ingress-class-name", "Contour IngressClass name").StringVar(&reh.IngressClass)
 	serve.Flag("ingressroute-root-namespaces", "Restrict contour to searching these namespaces for root ingress routes").StringVar(&ingressrouteRootNamespaceFlag)
 

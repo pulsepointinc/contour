@@ -15,6 +15,7 @@ package contour
 
 import (
 	"sync"
+	"time"
 
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/auth"
@@ -52,10 +53,13 @@ type ListenerCache struct {
 	// If not set, defaults to DEFAULT_HTTPS_ACCESS_LOG.
 	HTTPSAccessLog string
 
-	// UseProxyProto configurs all listeners to expect a PROXY protocol
+	// UseProxyProto configures all listeners to expect a PROXY protocol
 	// V1 header on new connections.
 	// If not set, defaults to false.
 	UseProxyProto bool
+
+	// IdleConnectionTimeout configures idle connection timeout for downstream
+	IdleConnectionTimeout time.Duration
 
 	listenerCache
 }
@@ -112,6 +116,13 @@ func (lc *ListenerCache) httpsAccessLog() string {
 		return lc.HTTPSAccessLog
 	}
 	return DEFAULT_HTTPS_ACCESS_LOG
+}
+
+func (lc *ListenerCache) idleTimeout() time.Duration {
+	if lc.IdleConnectionTimeout > 0 {
+		return lc.IdleConnectionTimeout
+	}
+	return DEFAULT_IDLE_TIMEOUT
 }
 
 type listenerCache struct {
@@ -180,6 +191,7 @@ const (
 	DEFAULT_HTTP_LISTENER_ADDRESS  = "0.0.0.0"
 	DEFAULT_HTTP_LISTENER_PORT     = 8080
 	DEFAULT_HTTPS_ACCESS_LOG       = "/dev/stdout"
+	DEFAULT_IDLE_TIMEOUT           = 10 * time.Second
 	DEFAULT_HTTPS_LISTENER_ADDRESS = DEFAULT_HTTP_LISTENER_ADDRESS
 	DEFAULT_HTTPS_LISTENER_PORT    = 8443
 
@@ -202,7 +214,7 @@ func (v *listenerVisitor) Visit() map[string]*v2.Listener {
 		Address: socketaddress(v.httpsAddress(), v.httpsPort()),
 	}
 	filters := []listener.Filter{
-		httpfilter(ENVOY_HTTPS_LISTENER, v.httpsAccessLog()),
+		httpfilter(ENVOY_HTTPS_LISTENER, v.httpsAccessLog(), v.idleTimeout()),
 	}
 	v.Visitable.Visit(func(vh dag.Vertex) {
 		switch vh := vh.(type) {
@@ -235,7 +247,7 @@ func (v *listenerVisitor) Visit() map[string]*v2.Listener {
 			Name:    ENVOY_HTTP_LISTENER,
 			Address: socketaddress(v.httpAddress(), v.httpPort()),
 			FilterChains: []listener.FilterChain{
-				filterchain(v.UseProxyProto, httpfilter(ENVOY_HTTP_LISTENER, v.httpAccessLog())),
+				filterchain(v.UseProxyProto, httpfilter(ENVOY_HTTP_LISTENER, v.httpAccessLog(), v.idleTimeout())),
 			},
 		}
 	}
@@ -269,7 +281,7 @@ func filterchain(useproxy bool, filters ...listener.Filter) listener.FilterChain
 	return fc
 }
 
-func httpfilter(routename, accessLogPath string) listener.Filter {
+func httpfilter(routename, accessLogPath string, idleTimeout time.Duration) listener.Filter {
 	return listener.Filter{
 		Name: httpFilter,
 		Config: &types.Struct{
@@ -303,6 +315,7 @@ func httpfilter(routename, accessLogPath string) listener.Filter {
 				),
 				"use_remote_address": bv(true), // TODO(jbeda) should this ever be false?
 				"access_log":         accesslog(accessLogPath),
+				"idle_timeout":       durationValue(idleTimeout),
 			},
 		},
 	}
@@ -340,6 +353,10 @@ func accesslog(path string) *types.Value {
 			}),
 		}),
 	)
+}
+
+func durationValue(duration time.Duration) *types.Value {
+	return sv(duration.String())
 }
 
 func sv(s string) *types.Value {

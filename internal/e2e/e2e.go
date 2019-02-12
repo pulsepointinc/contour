@@ -19,6 +19,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	accesslog "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v2"
@@ -37,12 +38,13 @@ import (
 )
 
 const (
-	googleApis   = "type.googleapis.com/"
-	typePrefix   = googleApis + "envoy.api.v2."
-	endpointType = typePrefix + "ClusterLoadAssignment"
-	clusterType  = typePrefix + "Cluster"
-	routeType    = typePrefix + "RouteConfiguration"
-	listenerType = typePrefix + "Listener"
+	googleApis            = "type.googleapis.com/"
+	typePrefix            = googleApis + "envoy.api.v2."
+	endpointType          = typePrefix + "ClusterLoadAssignment"
+	clusterType           = typePrefix + "Cluster"
+	routeType             = typePrefix + "RouteConfiguration"
+	listenerType          = typePrefix + "Listener"
+	idleConnectionTimeout = 1111 * time.Millisecond
 )
 
 type testWriter struct {
@@ -74,6 +76,7 @@ func setup(t *testing.T, opts ...func(*contour.ResourceEventHandler)) (cache.Res
 		},
 		Metrics: metrics.NewMetrics(r),
 	}
+	ch.IdleConnectionTimeout = idleConnectionTimeout
 
 	reh := contour.ResourceEventHandler{
 		Notifier: ch,

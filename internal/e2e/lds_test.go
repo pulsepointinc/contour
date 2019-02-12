@@ -1066,6 +1066,7 @@ func httpfilter(routename string) listener.Filter {
 				{Name: "envoy.grpc_web"},
 				{Name: "envoy.router"},
 			},
+			IdleTimeout: duration(idleConnectionTimeout),
 		}),
 	}
 }
@@ -1085,4 +1086,8 @@ func messageToStruct(msg proto.Message) *types.Struct {
 	}
 
 	return pbs
+}
+
+func duration(d time.Duration) *time.Duration {
+	return &d
 }
